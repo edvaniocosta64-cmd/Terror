@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "GameSave": {
+      "title": "GameSave",
+      "description": "Persisted story mode save slot for PROJECT: DARKNESS, scoped per authenticated player.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID."
+        },
+        "slotName": {
+          "type": "string",
+          "description": "Human-readable save slot label."
+        },
+        "chapterTitle": {
+          "type": "string",
+          "description": "Current story chapter label in Portuguese."
+        },
+        "storyPhase": {
+          "type": "string",
+          "enum": [
+            "INTRO_ROAD",
+            "PORCH_DIALOGUE",
+            "INSIDE_MYSTERY",
+            "GRANNYS_PURSUIT",
+            "ESCAPED"
+          ],
+          "description": "Current narrative progression state."
+        },
+        "playerX": {
+          "type": "number",
+          "description": "Player 3D world X coordinate."
+        },
+        "playerY": {
+          "type": "number",
+          "description": "Player 3D world Y coordinate."
+        },
+        "playerZ": {
+          "type": "number",
+          "description": "Player 3D world Z coordinate."
+        },
+        "playerYaw": {
+          "type": "number",
+          "description": "Player horizontal look angle in radians."
+        },
+        "health": {
+          "type": "integer",
+          "description": "Player remaining health points (0..100)."
+        },
+        "battery": {
+          "type": "integer",
+          "description": "Flashlight remaining battery percentage (0..100)."
+        },
+        "flashlightOn": {
+          "type": "boolean",
+          "description": "Whether the flashlight is toggled on."
+        },
+        "unlockedDoors": {
+          "type": "array",
+          "description": "IDs of doors opened or unlocked by the player."
+        },
+        "collectedItems": {
+          "type": "array",
+          "description": "IDs of world items picked up."
+        },
+        "inventoryItems": {
+          "type": "array",
+          "description": "Item IDs currently held in player inventory."
+        },
+        "readNotes": {
+          "type": "array",
+          "description": "IDs of story clues/notes read by the player."
+        },
+        "playTimeSeconds": {
+          "type": "integer",
+          "description": "Elapsed story mode time in seconds."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the save slot was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the save slot was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "slotName",
+        "chapterTitle",
+        "storyPhase",
+        "playerX",
+        "playerY",
+        "playerZ",
+        "playerYaw",
+        "health",
+        "battery",
+        "flashlightOn",
+        "unlockedDoors",
+        "collectedItems",
+        "inventoryItems",
+        "readNotes",
+        "playTimeSeconds",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/saves/{saveId}": {
+      "schema": {
+        "$ref": "#/entities/GameSave"
+      },
+      "description": "User-scoped story mode save slots."
+    }
+  }
+}

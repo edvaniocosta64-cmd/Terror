@@ -1,0 +1,6 @@
+{
+  "name": "Project: Darkness",
+  "description": "Jogo de terror 3D em primeira pessoa com modo história em português brasileiro, exploração de casa, diálogos e salvamento de progresso.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

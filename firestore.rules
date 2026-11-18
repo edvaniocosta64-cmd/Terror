@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function isValidStoryPhase(phase) {
+      return phase in ['INTRO_ROAD', 'PORCH_DIALOGUE', 'INSIDE_MYSTERY', 'GRANNYS_PURSUIT', 'ESCAPED'];
+    }
+
+    function isValidGameSave(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.slotName is string && data.slotName.size() >= 1 && data.slotName.size() <= 60 &&
+             data.chapterTitle is string && data.chapterTitle.size() >= 1 && data.chapterTitle.size() <= 100 &&
+             data.storyPhase is string && isValidStoryPhase(data.storyPhase) &&
+             data.playerX is number && data.playerX >= -200.0 && data.playerX <= 200.0 &&
+             data.playerY is number && data.playerY >= -50.0 && data.playerY <= 50.0 &&
+             data.playerZ is number && data.playerZ >= -200.0 && data.playerZ <= 200.0 &&
+             data.playerYaw is number && data.playerYaw >= -100.0 && data.playerYaw <= 100.0 &&
+             data.health is int && data.health >= 0 && data.health <= 100 &&
+             data.battery is int && data.battery >= 0 && data.battery <= 100 &&
+             data.flashlightOn is bool &&
+             isValidStringList(data.unlockedDoors, 32) &&
+             isValidStringList(data.collectedItems, 32) &&
+             isValidStringList(data.inventoryItems, 16) &&
+             isValidStringList(data.readNotes, 16) &&
+             data.playTimeSeconds is int && data.playTimeSeconds >= 0 && data.playTimeSeconds <= 9999999 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/saves/{saveId} {
+      allow get: if isOwner(userId) && isValidId(saveId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(saveId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'slotName', 'chapterTitle', 'storyPhase',
+                         'playerX', 'playerY', 'playerZ', 'playerYaw',
+                         'health', 'battery', 'flashlightOn',
+                         'unlockedDoors', 'collectedItems', 'inventoryItems', 'readNotes',
+                         'playTimeSeconds', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'slotName', 'chapterTitle', 'storyPhase',
+                         'playerX', 'playerY', 'playerZ', 'playerYaw',
+                         'health', 'battery', 'flashlightOn',
+                         'unlockedDoors', 'collectedItems', 'inventoryItems', 'readNotes',
+                         'playTimeSeconds', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidGameSave(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(saveId) &&
+                       isValidGameSave(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'slotName', 'chapterTitle', 'storyPhase',
+                         'playerX', 'playerY', 'playerZ', 'playerYaw',
+                         'health', 'battery', 'flashlightOn',
+                         'unlockedDoors', 'collectedItems', 'inventoryItems', 'readNotes',
+                         'playTimeSeconds', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(saveId);
+    }
+  }
+}
