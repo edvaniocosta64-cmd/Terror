@@ -61,7 +61,7 @@ fun VirtualJoystick(
 
     Box(
         modifier = modifier
-            .size(136.dp)
+            .size(124.dp)
             .testTag("virtual_joystick")
             .pointerInput(Unit) {
                 val maxRadius = size.width * 0.36f
@@ -175,7 +175,7 @@ fun ActionButtonsCluster(
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (interactionPrompt != null) {
             Surface(
@@ -187,13 +187,13 @@ fun ActionButtonsCluster(
                     text = interactionPrompt.actionLabel,
                     style = MaterialTheme.typography.labelLarge,
                     color = LanternAmber,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
             // Crouch / Hide Exit
@@ -203,7 +203,7 @@ fun ActionButtonsCluster(
                 contentColor = if (isCrouching || isHiding) ObsidianVoid else BoneParchment,
                 shape = CircleShape,
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .border(1.dp, ObsidianOutline, CircleShape)
                     .testTag("crouch_button"),
             ) {
@@ -224,7 +224,7 @@ fun ActionButtonsCluster(
                 contentColor = if (flashlightOn) ObsidianVoid else BoneParchment,
                 shape = CircleShape,
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .border(1.dp, ObsidianOutline, CircleShape)
                     .testTag("flashlight_button"),
             ) {
@@ -241,7 +241,7 @@ fun ActionButtonsCluster(
                 contentColor = BoneParchment,
                 shape = CircleShape,
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(60.dp)
                     .border(
                         width = 1.5.dp,
                         color = if (interactionPrompt != null) LanternAmber else ObsidianOutline,
@@ -252,7 +252,7 @@ fun ActionButtonsCluster(
                 Icon(
                     imageVector = Icons.Filled.TouchApp,
                     contentDescription = "Interagir",
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }

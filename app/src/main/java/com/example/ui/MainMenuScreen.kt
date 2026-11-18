@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -102,121 +103,188 @@ fun MainMenuScreen(
                 )
         )
 
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 24.dp, vertical = 14.dp),
         ) {
-            // Top bar with player identity
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Surface(
-                    color = ObsidianSurface.copy(alpha = 0.78f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.border(1.dp, ObsidianOutline, RoundedCornerShape(8.dp)),
-                ) {
-                    Text(
-                        text = "CAPÍTULO 1 • A CASA DA ESTRADA",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LanternAmber,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                }
+            val isLandscapeWide = maxWidth >= 560.dp
 
-                TextButton(
-                    onClick = { signOutPlayer(credentialManager, scope, onSignOutCompleted) },
-                    modifier = Modifier.testTag("sign_out_button"),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = "Sair da conta",
-                        tint = FogMist,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = userEmail?.substringBefore("@") ?: "Sair",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = FogMist,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Main Title + Menu Actions
             Column(
-                modifier = Modifier.widthIn(max = 420.dp),
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = "PROJECT:",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = CrimsonBlood,
-                )
-                Text(
-                    text = "DARKNESS",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = BoneParchment,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Uma estrada esquecida. Uma porta que se tranca atrás de você. Sobreviva em 3D à escuridão.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FogMist,
-                )
+                // Top bar with player identity
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        color = ObsidianSurface.copy(alpha = 0.78f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.border(1.dp, ObsidianOutline, RoundedCornerShape(8.dp)),
+                    ) {
+                        Text(
+                            text = "CAPÍTULO 1 • A CASA DA ESTRADA",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LanternAmber,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(28.dp))
-
-                if (latestSave != null) {
-                    MenuPrimaryButton(
-                        text = "Continuar (${latestSave.chapterTitle})",
-                        icon = Icons.Filled.Replay,
-                        testTag = "continue_game_button",
-                        onClick = { onContinueSave(latestSave) },
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { signOutPlayer(credentialManager, scope, onSignOutCompleted) },
+                        modifier = Modifier.testTag("sign_out_button"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Sair da conta",
+                            tint = FogMist,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = userEmail?.substringBefore("@") ?: "Sair",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = FogMist,
+                        )
+                    }
                 }
 
-                MenuPrimaryButton(
-                    text = "Novo Jogo • Modo História",
-                    icon = Icons.Filled.PlayArrow,
-                    testTag = "new_game_button",
-                    isPrimaryHighlight = latestSave == null,
-                    onClick = onNewGame,
-                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isLandscapeWide) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                text = "PROJECT:",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = CrimsonBlood,
+                            )
+                            Text(
+                                text = "DARKNESS",
+                                style = MaterialTheme.typography.displayLarge,
+                                color = BoneParchment,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Uma estrada esquecida. Uma porta que se tranca atrás de você. Sobreviva em 3D à escuridão.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = FogMist,
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier.widthIn(max = 330.dp).fillMaxWidth(0.46f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (latestSave != null) {
+                                MenuPrimaryButton(
+                                    text = "Continuar (${latestSave.chapterTitle})",
+                                    icon = Icons.Filled.Replay,
+                                    testTag = "continue_game_button",
+                                    onClick = { onContinueSave(latestSave) },
+                                )
+                            }
+                            MenuPrimaryButton(
+                                text = "Novo Jogo • Modo História",
+                                icon = Icons.Filled.PlayArrow,
+                                testTag = "new_game_button",
+                                isPrimaryHighlight = latestSave == null,
+                                onClick = onNewGame,
+                            )
+                            MenuSecondaryButton(
+                                text = "Carregar Salvamento",
+                                icon = Icons.Filled.FolderOpen,
+                                testTag = "load_saves_button",
+                                onClick = onOpenSaves,
+                            )
+                            MenuSecondaryButton(
+                                text = "Configurações (FPS & Controles)",
+                                icon = Icons.Filled.Settings,
+                                testTag = "settings_button",
+                                onClick = onOpenSettings,
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.widthIn(max = 420.dp),
+                    ) {
+                        Text(
+                            text = "PROJECT:",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = CrimsonBlood,
+                        )
+                        Text(
+                            text = "DARKNESS",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = BoneParchment,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Uma estrada esquecida. Uma porta que se tranca atrás de você. Sobreviva em 3D à escuridão.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = FogMist,
+                        )
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        if (latestSave != null) {
+                            MenuPrimaryButton(
+                                text = "Continuar (${latestSave.chapterTitle})",
+                                icon = Icons.Filled.Replay,
+                                testTag = "continue_game_button",
+                                onClick = { onContinueSave(latestSave) },
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
+                        MenuPrimaryButton(
+                            text = "Novo Jogo • Modo História",
+                            icon = Icons.Filled.PlayArrow,
+                            testTag = "new_game_button",
+                            isPrimaryHighlight = latestSave == null,
+                            onClick = onNewGame,
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        MenuSecondaryButton(
+                            text = "Carregar Salvamento",
+                            icon = Icons.Filled.FolderOpen,
+                            testTag = "load_saves_button",
+                            onClick = onOpenSaves,
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        MenuSecondaryButton(
+                            text = "Configurações (FPS & Controles)",
+                            icon = Icons.Filled.Settings,
+                            testTag = "settings_button",
+                            onClick = onOpenSettings,
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                MenuSecondaryButton(
-                    text = "Carregar Salvamento",
-                    icon = Icons.Filled.FolderOpen,
-                    testTag = "load_saves_button",
-                    onClick = onOpenSaves,
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                MenuSecondaryButton(
-                    text = "Configurações (FPS & Controles)",
-                    icon = Icons.Filled.Settings,
-                    testTag = "settings_button",
-                    onClick = onOpenSettings,
+                Text(
+                    text = "Renderização OpenGL ES 3D • Suporte 30/60/90/120 FPS com Escala Automática",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FogMist.copy(alpha = 0.72f),
                 )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "Renderização OpenGL ES 3D • Suporte 30/60/90/120 FPS com Escala Automática",
-                style = MaterialTheme.typography.labelSmall,
-                color = FogMist.copy(alpha = 0.72f),
-            )
         }
     }
 }

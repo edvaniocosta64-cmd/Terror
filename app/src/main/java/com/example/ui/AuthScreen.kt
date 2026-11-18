@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PlayArrow
@@ -129,7 +131,8 @@ fun AuthScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -137,12 +140,12 @@ fun AuthScreen(
                 color = ObsidianSurface.copy(alpha = 0.88f),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
-                    .widthIn(max = 460.dp)
+                    .widthIn(max = 520.dp)
                     .fillMaxWidth()
                     .border(1.dp, CrimsonBlood.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
             ) {
                 Column(
-                    modifier = Modifier.padding(28.dp),
+                    modifier = Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
@@ -151,14 +154,14 @@ fun AuthScreen(
                         color = BoneParchment,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "SOBREVIVA À NOITE • MODO HISTÓRIA 3D",
                         style = MaterialTheme.typography.labelSmall,
                         color = LanternAmber,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = if (firebaseAvailable) {
                             "Conecte sua conta Google para salvar seu progresso na nuvem ou jogue localmente no aparelho."
@@ -169,7 +172,7 @@ fun AuthScreen(
                         color = FogMist,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     errorMessage?.let { err ->
                         Text(

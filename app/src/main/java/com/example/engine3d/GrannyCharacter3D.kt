@@ -37,6 +37,19 @@ data class GrannyState(
     var noiseTargetZ: Float = 0.0f,
     var waypointIndex: Int = 0,
     var creepPauseTimer: Float = 0.0f,
+    var breathPhase: Float = 0.0f,
+    var blinkTimer: Float = 2.4f,
+    var blinkAmount: Float = 0.0f,
+    var headLookYawDeg: Float = 0.0f,
+    var headLookPitchDeg: Float = 0.0f,
+    var currentMoveSpeedNorm: Float = 0.0f,
+    var doorSlamGestureTimer: Float = 0.0f,
+    var isLoomingCapture: Boolean = false,
+    var isDraggingCapture: Boolean = false,
+    var dragPullPhase: Float = 0.0f,
+    var dragGripBlend: Float = 0.0f,
+    var isSearchingRoom: Boolean = false,
+    var searchBendDeg: Float = 0.0f,
 ) {
     private val patrolWaypoints = listOf(
         0.0f to 5.8f,   // Foyer
@@ -61,36 +74,56 @@ data class GrannyState(
         if (attackCooldown > 0f) {
             attackCooldown = (attackCooldown - dt).coerceAtLeast(0f)
         }
+        if (doorSlamGestureTimer > 0f) {
+            doorSlamGestureTimer = (doorSlamGestureTimer - dt * 0.9f).coerceAtLeast(0f)
+        }
         stateTimer += dt
+        breathPhase += dt * if (aiState == GrannyAiState.HUNTING_PLAYER) 3.4f else 1.7f
+
+        // Natural periodic eye blinking
+        blinkTimer -= dt
+        if (blinkTimer <= 0f) {
+            blinkTimer = 3.2f + (stateTimer % 2.1f)
+        }
+        blinkAmount = if (blinkTimer < 0.16f) {
+            sin((blinkTimer / 0.16f) * Math.PI.toFloat())
+        } else {
+            0f
+        }
 
         val dxToPlayer = playerX - x
         val dzToPlayer = playerZ - z
         val distToPlayer = sqrt(dxToPlayer * dxToPlayer + dzToPlayer * dzToPlayer)
+        val angleToPlayerDeg = atan2(dxToPlayer, dzToPlayer) * (180f / Math.PI.toFloat())
+
+        // Reset move norm each frame; moveToward sets it proportionally
+        currentMoveSpeedNorm = 0f
 
         when (aiState) {
             GrannyAiState.WAITING_AT_DOOR -> {
-                // Gentle breathing & eerie head tilt at entrance
+                // Gentle breathing & eerie head tilt at entrance while watching player approach road
                 yawDeg = 0f
                 expression = GrannyExpression.GENTLE_SMILE
-                headTiltDeg = sin(stateTimer * 1.1f) * 4f
+                headTiltDeg = sin(stateTimer * 1.1f) * 4.5f
                 jawOpenAmount = 0f
+                updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 42f)
             }
 
             GrannyAiState.GREETING_DIALOGUE -> {
-                // Face player gently on porch
-                val targetYaw = atan2(dxToPlayer, dzToPlayer) * (180f / Math.PI.toFloat())
-                yawDeg = targetYaw
-                // Subtle unsettling flickers between gentle smile and creepy stare
+                // Turn body & face toward player warmly (with unsettling flashes)
+                yawDeg = lerpAngleDeg(yawDeg, angleToPlayerDeg, dt * 4.5f)
                 expression = if ((stateTimer % 5.0f) > 4.2f) GrannyExpression.CREEPY_STARE else GrannyExpression.GENTLE_SMILE
                 headTiltDeg = sin(stateTimer * 1.8f) * 6f
                 jawOpenAmount = (0.25f + 0.25f * sin(stateTimer * 12f)).coerceIn(0f, 0.5f)
+                updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 35f)
             }
 
             GrannyAiState.CLOSING_DOOR_MYSTERY -> {
-                // Step back inside hallway slowly while door shuts
+                // Step back inside hallway slowly while gesturing to shut the door
                 val targetX = 0.0f
                 val targetZ = 5.4f
                 moveToward(targetX, targetZ, dt, 1.35f, doors)
+                updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 50f)
                 val dist = sqrt((targetX - x) * (targetX - x) + (targetZ - z) * (targetZ - z))
                 if (dist < 0.35f || stateTimer > 3.5f) {
                     aiState = GrannyAiState.PATROLLING_STRANGE
@@ -105,10 +138,21 @@ data class GrannyState(
                     expression = GrannyExpression.CREEPY_STARE
                     headTiltDeg = 16f * sin(stateTimer * 0.8f)
                     jawOpenAmount = 0.08f
+                    // Scan left-right slowly or lock eyes on player if near
+                    if (!playerHidden && distToPlayer < 8.5f) {
+                        updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 55f)
+                    } else {
+                        headLookYawDeg += (sin(stateTimer * 1.2f) * 35f - headLookYawDeg) * (dt * 3f).coerceAtMost(1f)
+                    }
                 } else {
                     expression = if (distToPlayer < 6.0f && !playerHidden) GrannyExpression.SUSPICIOUS else GrannyExpression.CREEPY_STARE
                     headTiltDeg = sin(stateTimer * 2.1f) * 8f
                     jawOpenAmount = 0.0f
+                    if (!playerHidden && distToPlayer < 8.0f) {
+                        updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 50f)
+                    } else {
+                        headLookYawDeg *= (1f - (dt * 4f).coerceAtMost(0.9f))
+                    }
 
                     val (wx, wz) = patrolWaypoints[waypointIndex % patrolWaypoints.size]
                     val arrived = moveToward(wx, wz, dt, 1.38f, doors)
@@ -138,6 +182,7 @@ data class GrannyState(
                 expression = GrannyExpression.MENACING_GRIN
                 headTiltDeg = -10f
                 jawOpenAmount = 0.15f
+                updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 45f)
                 val arrived = moveToward(noiseTargetX, noiseTargetZ, dt, 2.05f, doors)
                 if (!playerHidden && (distToPlayer < 4.5f || (flashlightOn && distToPlayer < 7.0f))) {
                     aiState = GrannyAiState.HUNTING_PLAYER
@@ -153,6 +198,7 @@ data class GrannyState(
                 expression = if (distToPlayer < 3.2f) GrannyExpression.HOSTILE_SHRIEK else GrannyExpression.MENACING_GRIN
                 headTiltDeg = sin(stateTimer * 7f) * 10f
                 jawOpenAmount = if (distToPlayer < 3.2f) 0.85f else 0.35f
+                updateHeadTrack(angleToPlayerDeg, distToPlayer, dt, maxYaw = 38f)
 
                 if (playerHidden && distToPlayer > 2.2f) {
                     // Lost sight of player if they hid inside wardrobe
@@ -178,6 +224,23 @@ data class GrannyState(
         }
     }
 
+    private fun updateHeadTrack(targetWorldYawDeg: Float, dist: Float, dt: Float, maxYaw: Float) {
+        var relYaw = targetWorldYawDeg - yawDeg
+        while (relYaw > 180f) relYaw -= 360f
+        while (relYaw < -180f) relYaw += 360f
+        val clampedYaw = relYaw.coerceIn(-maxYaw, maxYaw)
+        headLookYawDeg += (clampedYaw - headLookYawDeg) * (dt * 6f).coerceAtMost(1f)
+        val pitchTarget = if (dist < 4f) -6f else 0f
+        headLookPitchDeg += (pitchTarget - headLookPitchDeg) * (dt * 5f).coerceAtMost(1f)
+    }
+
+    private fun lerpAngleDeg(current: Float, target: Float, alpha: Float): Float {
+        var diff = target - current
+        while (diff > 180f) diff -= 360f
+        while (diff < -180f) diff += 360f
+        return current + diff * alpha.coerceIn(0f, 1f)
+    }
+
     private fun moveToward(
         targetX: Float,
         targetZ: Float,
@@ -195,8 +258,9 @@ data class GrannyState(
         val vz = (dz / dist) * step
 
         val targetYaw = atan2(dx, dz) * (180f / Math.PI.toFloat())
-        yawDeg = targetYaw
+        yawDeg = lerpAngleDeg(yawDeg, targetYaw, dt * 8f)
         walkCycle += dt * speed * 4.2f
+        currentMoveSpeedNorm = (speed / 2.7f).coerceIn(0.2f, 1.0f)
 
         // Granny can pass through unlocked/open interior doors, otherwise slides around walls
         val openDoorsOnly = doors.filter { it.def.id == "front_door" || !it.isUnlocked }

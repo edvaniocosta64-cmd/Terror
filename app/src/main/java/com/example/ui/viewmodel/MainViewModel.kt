@@ -81,6 +81,9 @@ class MainViewModel(
         )
 
     init {
+        audioEngine.setMenuMode(true)
+        audioEngine.setPaused(false)
+        audioEngine.startAmbient()
         viewModelScope.launch {
             settings.collect { s ->
                 audioEngine.updateVolumes(s.masterVolume, s.ambientVolume, s.sfxVolume)
@@ -95,15 +98,17 @@ class MainViewModel(
 
     fun startNewStory() {
         gameEngine.resetNewStory()
-        audioEngine.startAmbient()
+        audioEngine.setMenuMode(false)
         audioEngine.setPaused(false)
+        audioEngine.startAmbient()
         _currentScreen.value = AppScreen.GAME
     }
 
     fun continueFromSave(save: GameSave) {
         gameEngine.restoreFromSave(save)
-        audioEngine.startAmbient()
+        audioEngine.setMenuMode(false)
         audioEngine.setPaused(false)
+        audioEngine.startAmbient()
         _currentScreen.value = AppScreen.GAME
     }
 

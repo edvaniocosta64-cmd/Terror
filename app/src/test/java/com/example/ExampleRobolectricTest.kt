@@ -92,10 +92,67 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `main activity launches cleanly without uncaught exception`() {
+    fun `main activity launches cleanly in sensor landscape without uncaught exception`() {
         val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java)
         controller.setup()
         val activity = controller.get()
         org.junit.Assert.assertFalse(activity.isFinishing)
+        assertEquals(
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            activity.requestedOrientation,
+        )
+        val info = activity.packageManager.getActivityInfo(activity.componentName, 0)
+        assertEquals(
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            info.screenOrientation,
+        )
+    }
+
+    @Test
+    fun `all procedural 3D horror textures generate valid non-empty bitmaps`() {
+        for (kind in com.example.engine3d.TextureKind.entries) {
+            val bmp = com.example.engine3d.ProceduralTextures3D.generateBitmap(kind, size = 128)
+            assertEquals(128, bmp.width)
+            assertEquals(128, bmp.height)
+            bmp.recycle()
+        }
+    }
+
+    @Test
+    fun `capture cutscene overlay renders blackout layer caption and accessible skip control`() {
+        var skipped = false
+        composeTestRule.setContent {
+            ProjectDarknessTheme {
+                com.example.ui.CaptureCutsceneOverlay(
+                    caption = "Ela arrasta você para as profundezas sombrias da casa...",
+                    blackoutAlpha = 0.75f,
+                    onSkip = { skipped = true },
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("capture_blackout_layer").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("capture_caption_text").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("skip_capture_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun `awakening cutscene overlay renders eyelid shutter peek hint caption and skip button`() {
+        var skipped = false
+        composeTestRule.setContent {
+            ProjectDarknessTheme {
+                com.example.ui.AwakeningCutsceneOverlay(
+                    caption = "Fique imóvel! A Vovó procura você pelo quarto...",
+                    eyelidOpen = 0.55f,
+                    peekEnabled = true,
+                    onSkip = { skipped = true },
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("awakening_eyelid_overlay").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("awakening_peek_hint").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("awakening_caption_text").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("skip_awakening_button").assertIsDisplayed()
     }
 }

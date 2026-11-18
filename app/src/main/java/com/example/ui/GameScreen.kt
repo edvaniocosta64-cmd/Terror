@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import com.example.data.GameSettings
 import com.example.engine3d.AutoQualityController
 import com.example.engine3d.HorrorGameEngine
 import com.example.engine3d.HorrorGlRenderer
+import com.example.engine3d.InteractionPrompt
 import com.example.engine3d.PerformanceTelemetry
 import com.example.engine3d.QualityTier
 import com.example.ui.theme.BoneParchment
@@ -161,7 +163,7 @@ fun GameScreen(
         )
 
         // Subtle center reticle dot
-        if (!hud.isCinematicIntro && !isPauseOpen && hud.activeNoteTitle == null) {
+        if (!hud.isCinematicIntro && !hud.isCaptureCutscene && !hud.isAwakeningCutscene && !isPauseOpen && hud.activeNoteTitle == null) {
             Canvas(modifier = Modifier.size(16.dp).align(Alignment.Center)) {
                 val dotColor = if (hud.interactionPrompt != null) LanternAmber else Color.White.copy(alpha = 0.55f)
                 drawCircle(
@@ -172,12 +174,18 @@ fun GameScreen(
             }
         }
 
-        // Right-half Touch-Look Drag Zone
-        if (!hud.isCinematicIntro && !isPauseOpen && !hud.isCaught && !hud.isEscaped) {
+        // Right-half Touch-Look Drag Zone (active in free play AND while peeking under bed during Granny search!)
+        val allowTouchLook = !hud.isCinematicIntro &&
+            !hud.isCaptureCutscene &&
+            (!hud.isAwakeningCutscene || hud.awakeningPeekEnabled) &&
+            !isPauseOpen &&
+            !hud.isCaught &&
+            !hud.isEscaped
+        if (allowTouchLook) {
             TouchLookPad(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 160.dp),
+                    .padding(start = if (hud.isAwakeningCutscene) 0.dp else 184.dp),
                 onLookDelta = { dx, dy ->
                     gameEngine.addLookDelta(
                         dx = dx,
@@ -190,7 +198,7 @@ fun GameScreen(
         }
 
         // Top HUD
-        if (!hud.isCinematicIntro) {
+        if (!hud.isCinematicIntro && !hud.isCaptureCutscene && !hud.isAwakeningCutscene) {
             TopHorrorHud(
                 hud = hud,
                 telemetry = telemetry,
@@ -204,6 +212,33 @@ fun GameScreen(
             )
         }
 
+        // Cinematic Intro Overlay
+        if (hud.isCinematicIntro) {
+            CinematicIntroOverlay(
+                caption = hud.introCaption,
+                onSkip = { gameEngine.skipCinematicIntro() },
+            )
+        }
+
+        // Part 2: Capture & Dragging Cutscene Blackout + Letterbox Overlay
+        if (hud.isCaptureCutscene) {
+            CaptureCutsceneOverlay(
+                caption = hud.captureCaption,
+                blackoutAlpha = hud.captureBlackoutAlpha,
+                onSkip = { gameEngine.skipCaptureCutscene() },
+            )
+        }
+
+        // Part 3: Awakening in Bedroom + Under-Bed Hiding + Granny Search Overlay
+        if (hud.isAwakeningCutscene) {
+            AwakeningCutsceneOverlay(
+                caption = hud.awakeningCaption,
+                eyelidOpen = hud.awakeningEyelidOpen,
+                peekEnabled = hud.awakeningPeekEnabled,
+                onSkip = { gameEngine.skipAwakeningCutscene() },
+            )
+        }
+
         // Status toast banner
         hud.statusToast?.let { toast ->
             Surface(
@@ -212,7 +247,8 @@ fun GameScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(top = 86.dp),
+                    .padding(top = 12.dp)
+                    .widthIn(max = 340.dp),
             ) {
                 Text(
                     text = toast,
@@ -223,7 +259,7 @@ fun GameScreen(
             }
         }
 
-        // Dialogue Subtitles Box
+        // Dialogue Subtitles Box (centered cleanly at bottom between joystick & action buttons in landscape)
         hud.activeDialogue?.let { line ->
             DialogueSubtitleBox(
                 dialogue = line,
@@ -231,25 +267,32 @@ fun GameScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(bottom = 148.dp),
+                    .padding(start = 160.dp, end = 196.dp, bottom = 14.dp),
             )
         }
 
         // Virtual Joystick & Action Buttons
-        if (!hud.isCinematicIntro && !isPauseOpen && !hud.isCaught && !hud.isEscaped) {
+        if (!hud.isCinematicIntro && !hud.isCaptureCutscene && !hud.isAwakeningCutscene && !isPauseOpen && !hud.isCaught && !hud.isEscaped) {
             VirtualJoystick(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(start = 20.dp, bottom = 20.dp),
+                    .padding(start = 18.dp, bottom = 14.dp),
                 onMoveChanged = { x, y ->
                     gameEngine.moveInputX = x
                     gameEngine.moveInputY = y
                 },
             )
 
+            val effectivePrompt = hud.interactionPrompt ?: if (hud.isHiding) {
+                InteractionPrompt(
+                    targetId = "exit_hide",
+                    actionLabel = if (hud.isHidingUnderBed) "Sair debaixo da cama" else "Sair do armário",
+                )
+            } else null
+
             ActionButtonsCluster(
-                interactionPrompt = hud.interactionPrompt,
+                interactionPrompt = effectivePrompt,
                 hasFlashlight = hud.hasFlashlight,
                 flashlightOn = hud.flashlightOn,
                 isCrouching = hud.isCrouching,
@@ -260,15 +303,7 @@ fun GameScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(end = 20.dp, bottom = 20.dp),
-            )
-        }
-
-        // Cinematic Intro Overlay
-        if (hud.isCinematicIntro) {
-            CinematicIntroOverlay(
-                caption = hud.introCaption,
-                onSkip = { gameEngine.skipCinematicIntro() },
+                    .padding(end = 18.dp, bottom = 14.dp),
             )
         }
 

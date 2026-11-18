@@ -104,6 +104,10 @@ dependencies {
   implementation(libs.googleid)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.filament.android)
+  implementation(libs.filament.utils.android)
+  implementation(libs.gltfio.android)
+  implementation(libs.filamat.android)
   // Unused dependencies commented out for APK size optimization:
   // implementation(libs.accompanist.permissions)
   // implementation(libs.androidx.navigation.compose)

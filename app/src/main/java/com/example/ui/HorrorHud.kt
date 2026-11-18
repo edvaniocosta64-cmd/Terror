@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Save
@@ -111,14 +113,14 @@ fun TopHorrorHud(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
         // Left: Objective + Health/Battery + Inventory
         Column(
-            modifier = Modifier.widthIn(max = 310.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.widthIn(max = 280.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Surface(
                 color = ObsidianSurface.copy(alpha = 0.80f),
@@ -245,36 +247,195 @@ fun CinematicIntroOverlay(
     onSkip: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        // Top letterbox
+        // Top letterbox (slim for landscape widescreen)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(30.dp)
                 .align(Alignment.TopCenter)
                 .background(Color.Black),
         )
         // Bottom letterbox with caption & skip
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.92f))
+                .background(Color.Black.copy(alpha = 0.90f))
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = caption,
                 style = MaterialTheme.typography.titleMedium,
                 color = BoneParchment,
-                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
-            Spacer(modifier = Modifier.height(6.dp))
             TextButton(
                 onClick = onSkip,
-                modifier = Modifier.testTag("skip_intro_button"),
+                modifier = Modifier.height(48.dp).testTag("skip_intro_button"),
             ) {
                 Text("Pular Introdução >>", color = LanternAmber)
+            }
+        }
+    }
+}
+
+@Composable
+fun CaptureCutsceneOverlay(
+    caption: String,
+    blackoutAlpha: Float,
+    onSkip: () -> Unit,
+) {
+    val clampedBlackout = blackoutAlpha.coerceIn(0f, 1f)
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Blackout fade representing loss of consciousness
+        if (clampedBlackout > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = clampedBlackout))
+                    .testTag("capture_blackout_layer"),
+            )
+        }
+
+        // Top subtle cinema bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(26.dp)
+                .align(Alignment.TopCenter)
+                .background(Color.Black.copy(alpha = 0.88f)),
+        )
+
+        // Bottom caption & accessible skip control
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(Color.Black.copy(alpha = 0.88f))
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            if (caption.isNotBlank()) {
+                Text(
+                    text = caption,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = BoneParchment,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                        .testTag("capture_caption_text"),
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+            TextButton(
+                onClick = onSkip,
+                modifier = Modifier
+                    .height(48.dp)
+                    .testTag("skip_capture_button"),
+            ) {
+                Text("Pular Cena >>", color = LanternAmber)
+            }
+        }
+    }
+}
+
+@Composable
+fun AwakeningCutsceneOverlay(
+    caption: String,
+    eyelidOpen: Float,
+    peekEnabled: Boolean,
+    onSkip: () -> Unit,
+) {
+    val open = eyelidOpen.coerceIn(0f, 1f)
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Organic drowsy eyelid opening vignette (top + bottom closing shutters & soft blur dark edges)
+        if (open < 0.99f) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("awakening_eyelid_overlay"),
+            ) {
+                val closedFrac = (1f - open).coerceIn(0f, 1f)
+                val lidHeight = size.height * 0.54f * closedFrac
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Black, Color.Black.copy(alpha = 0.94f), Color.Transparent),
+                        startY = 0f,
+                        endY = (lidHeight + size.height * 0.10f).coerceAtLeast(1f),
+                    ),
+                    topLeft = Offset.Zero,
+                    size = androidx.compose.ui.geometry.Size(size.width, (lidHeight + size.height * 0.10f).coerceAtMost(size.height)),
+                )
+                val bottomTop = (size.height - lidHeight - size.height * 0.10f).coerceAtLeast(0f)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.94f), Color.Black),
+                        startY = bottomTop,
+                        endY = size.height,
+                    ),
+                    topLeft = Offset(0f, bottomTop),
+                    size = androidx.compose.ui.geometry.Size(size.width, size.height - bottomTop),
+                )
+            }
+        }
+
+        // Top subtle cinema bar + peek hint while Granny searches the room
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.72f))
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (peekEnabled) {
+                Text(
+                    text = "Arraste o lado direito para espiar debaixo da cama",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LanternAmber,
+                    modifier = Modifier.testTag("awakening_peek_hint"),
+                )
+            }
+        }
+
+        // Bottom caption & skip control
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(Color.Black.copy(alpha = 0.84f))
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            if (caption.isNotBlank()) {
+                Text(
+                    text = caption,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = BoneParchment,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                        .testTag("awakening_caption_text"),
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+            TextButton(
+                onClick = onSkip,
+                modifier = Modifier
+                    .height(48.dp)
+                    .testTag("skip_awakening_button"),
+            ) {
+                Text("Pular Cena >>", color = LanternAmber)
             }
         }
     }
@@ -290,8 +451,8 @@ fun DialogueSubtitleBox(
         color = ObsidianVoid.copy(alpha = 0.90f),
         shape = RoundedCornerShape(12.dp),
         modifier = modifier
-            .widthIn(max = 560.dp)
-            .fillMaxWidth(0.90f)
+            .widthIn(max = 420.dp)
+            .fillMaxWidth()
             .border(
                 width = 1.dp,
                 color = if (dialogue.isGranny) CrimsonBlood else FogMist.copy(alpha = 0.5f),
@@ -300,16 +461,16 @@ fun DialogueSubtitleBox(
             .clickable(onClick = onAdvance)
             .testTag("dialogue_subtitle_box"),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
                 text = dialogue.speaker.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (dialogue.isGranny) CrimsonBright else LanternAmber,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "\"${dialogue.text}\"",
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = BoneParchment,
             )
         }
@@ -326,22 +487,24 @@ fun NoteReaderOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.72f))
-            .padding(24.dp),
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             color = ObsidianSurface,
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier
-                .widthIn(max = 460.dp)
+                .widthIn(max = 520.dp)
                 .fillMaxWidth()
                 .border(1.5.dp, LanternAmber, RoundedCornerShape(14.dp)),
         ) {
-            Column(modifier = Modifier.padding(22.dp)) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text(text = title, style = MaterialTheme.typography.headlineMedium, color = LanternAmber)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(text = body, style = MaterialTheme.typography.bodyLarge, color = BoneParchment)
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Button(
                     onClick = onClose,
                     colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlood),
@@ -366,20 +529,22 @@ fun PauseSaveOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.78f))
-            .padding(24.dp),
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             color = ObsidianSurface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
-                .widthIn(max = 420.dp)
+                .widthIn(max = 480.dp)
                 .fillMaxWidth()
                 .border(1.dp, CrimsonBlood.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
         ) {
             Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("JOGO PAUSADO", style = MaterialTheme.typography.headlineMedium, color = BoneParchment)
 
@@ -442,21 +607,23 @@ fun OutcomeOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(if (escaped) ObsidianVoid.copy(alpha = 0.85f) else CrimsonDarkBackground())
-            .padding(24.dp),
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             color = ObsidianSurface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
-                .widthIn(max = 440.dp)
+                .widthIn(max = 500.dp)
                 .fillMaxWidth()
                 .border(1.5.dp, if (escaped) LanternAmber else CrimsonBright, RoundedCornerShape(16.dp)),
         ) {
             Column(
-                modifier = Modifier.padding(26.dp),
+                modifier = Modifier.padding(22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
                     text = if (escaped) "VOCÊ ESCAPOU!" else "VOCÊ FOI CAPTURADO",
@@ -474,11 +641,11 @@ fun OutcomeOverlay(
                     color = BoneParchment,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Button(
                     onClick = onRetry,
                     colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlood),
-                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("outcome_retry_button"),
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("outcome_retry_button"),
                 ) {
                     Text(if (escaped) "Jogar Novamente" else "Tentar Novamente")
                 }

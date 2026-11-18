@@ -75,8 +75,19 @@ enum class InteractKind {
     NOTE,
     DOOR,
     HIDE_CLOSET,
+    HIDE_BED,
     FUSE_BOX,
 }
+
+data class UnderBedSpot(
+    val id: String,
+    val hideX: Float,
+    val hideY: Float,
+    val hideZ: Float,
+    val lookOutYawRad: Float,
+    val exitX: Float,
+    val exitZ: Float,
+)
 
 data class WorldItemDef(
     val id: String,
@@ -101,6 +112,7 @@ data class PointLightDef(
     val b: Float,
     val radius: Float,
     val flickerSeed: Float = 0f,
+    val slowFlicker: Boolean = false,
 )
 
 object WorldMap3D {
@@ -111,21 +123,63 @@ object WorldMap3D {
 
     val staticBoxes: List<BoxMeshDef> by lazy { buildStaticGeometry() }
     val wallColliders: List<BoxCollider> by lazy { buildStaticColliders() }
+    val underBedSpots: List<UnderBedSpot> = listOf(
+        UnderBedSpot(
+            id = "bed_awakening_hide",
+            hideX = 8.95f,
+            hideY = 0.25f,
+            hideZ = -5.85f,
+            lookOutYawRad = -1.25f, // faces West-South toward bed legs, floor & doorway!
+            exitX = 8.20f,
+            exitZ = -4.05f,
+        ),
+        UnderBedSpot(
+            id = "bed_nw_hide",
+            hideX = -9.9f,
+            hideY = 0.25f,
+            hideZ = -14.2f,
+            lookOutYawRad = 0.85f,
+            exitX = -9.5f,
+            exitZ = -12.3f,
+        ),
+    )
+
+    fun floorHeightAt(x: Float, z: Float): Float {
+        // Walkable Grand Wooden Staircase in North-East Stairwell Hall (X: 7.2..11.5, Z: -15.8..-10.2)
+        if (x in 7.1f..11.6f && z <= -10.2f && z >= -15.8f) {
+            if (z <= -13.6f) return 2.04f
+            val t = ((-10.2f - z) / 3.4f).coerceIn(0f, 1f)
+            return t * 2.04f
+        }
+        return 0f
+    }
+
     val pointLights: List<PointLightDef> = listOf(
         // Warm porch lantern
-        PointLightDef(0.0f, 2.55f, 10.6f, 1.0f, 0.62f, 0.25f, 11.5f, 1.3f),
+        PointLightDef(0.0f, 2.55f, 10.6f, 1.0f, 0.66f, 0.28f, 11.5f, 1.3f),
         // Distant roadside streetlight near start
         PointLightDef(-3.1f, 3.6f, 22.0f, 0.55f, 0.65f, 0.85f, 10.0f, 3.7f),
-        // Foyer chandelier
-        PointLightDef(0.0f, 2.9f, 7.0f, 0.92f, 0.56f, 0.28f, 9.5f, 2.1f),
-        // Living room fireplace ember glow
-        PointLightDef(-11.0f, 0.9f, 6.0f, 1.0f, 0.36f, 0.14f, 8.5f, 5.2f),
-        // Kitchen dim overhead bulb
-        PointLightDef(7.5f, 2.9f, 6.0f, 0.78f, 0.75f, 0.65f, 8.0f, 0.7f),
-        // Dark corridor sconce
-        PointLightDef(0.0f, 2.4f, -2.0f, 0.75f, 0.28f, 0.22f, 8.0f, 4.1f),
-        // Cellar eerie bulb
-        PointLightDef(0.0f, 2.8f, -12.0f, 0.75f, 0.18f, 0.18f, 9.0f, 6.4f),
+        // Foyer chandelier (warm antique incandescent)
+        PointLightDef(0.0f, 2.85f, 7.0f, 1.0f, 0.72f, 0.38f, 11.5f, 2.1f),
+        // Living room warm standing lamp + fireplace ember glow
+        PointLightDef(-4.6f, 2.25f, 7.8f, 0.96f, 0.68f, 0.34f, 10.5f, 1.8f),
+        PointLightDef(-10.8f, 1.0f, 6.0f, 1.0f, 0.44f, 0.16f, 9.5f, 5.2f, slowFlicker = true),
+        // Kitchen warm overhead pendant
+        PointLightDef(7.5f, 2.85f, 6.0f, 0.94f, 0.80f, 0.54f, 10.5f, 0.7f),
+        // Long corridor sconces (dimmer, slowly flickering)
+        PointLightDef(0.0f, 2.45f, -1.6f, 0.88f, 0.56f, 0.28f, 9.5f, 4.1f, slowFlicker = true),
+        PointLightDef(0.0f, 2.45f, -6.2f, 0.72f, 0.44f, 0.22f, 8.5f, 2.9f, slowFlicker = true),
+        // Study warm desk lamp
+        PointLightDef(-9.2f, 1.55f, -5.4f, 0.95f, 0.68f, 0.32f, 9.5f, 3.3f),
+        // Awakening Bedroom warm antique nightstand lamp + doorway sconce
+        PointLightDef(9.8f, 1.38f, -4.15f, 1.0f, 0.70f, 0.32f, 10.0f, 4.8f, slowFlicker = true),
+        PointLightDef(5.4f, 2.65f, -3.5f, 0.76f, 0.56f, 0.32f, 9.5f, 1.5f),
+        // Staircase Hall chandelier
+        PointLightDef(9.2f, 3.55f, -12.4f, 0.94f, 0.66f, 0.32f, 11.5f, 5.9f),
+        // North-West Master Bedroom dim lamp
+        PointLightDef(-9.0f, 2.55f, -11.5f, 0.86f, 0.56f, 0.28f, 10.0f, 2.4f, slowFlicker = true),
+        // Cellar eerie amber-red bulb
+        PointLightDef(0.0f, 2.8f, -12.0f, 0.82f, 0.30f, 0.24f, 9.5f, 6.4f, slowFlicker = true),
     )
 
     val doorDefs: List<DoorDef> = listOf(
@@ -182,13 +236,37 @@ object WorldMap3D {
         ),
         DoorDef(
             id = "door_granny_room",
-            title = "Quarto da Vovó",
+            title = "Porta do Quarto",
             hingeX = 3.0f,
             hingeZ = -2.2f,
             width = 1.45f,
             height = 2.45f,
             thickness = 0.12f,
             closedYawDeg = 90f,
+            openDeltaDeg = -85f,
+            requiredItemId = null,
+        ),
+        DoorDef(
+            id = "door_bedroom_nw",
+            title = "Porta do Quarto Antigo",
+            hingeX = -9.2f,
+            hingeZ = -8.0f,
+            width = 1.45f,
+            height = 2.45f,
+            thickness = 0.12f,
+            closedYawDeg = 0f,
+            openDeltaDeg = -85f,
+            requiredItemId = null,
+        ),
+        DoorDef(
+            id = "door_stairhall",
+            title = "Porta da Escadaria",
+            hingeX = 6.85f,
+            hingeZ = -8.0f,
+            width = 1.45f,
+            height = 2.45f,
+            thickness = 0.12f,
+            closedYawDeg = 0f,
             openDeltaDeg = -85f,
             requiredItemId = null,
         ),
@@ -271,7 +349,7 @@ object WorldMap3D {
             name = "Fusível Elétrico",
             description = "Restaura a energia da trava da porta da frente.",
             kind = InteractKind.ITEM,
-            x = 9.2f, y = 0.92f, z = -5.8f,
+            x = 5.0f, y = 0.92f, z = -7.1f,
             r = 0.35f, g = 0.75f, b = 0.92f,
         ),
         WorldItemDef(
@@ -295,8 +373,24 @@ object WorldMap3D {
             name = "Armário Antigo",
             description = "Esconda-se da Vovó aqui dentro.",
             kind = InteractKind.HIDE_CLOSET,
-            x = 10.6f, y = 1.15f, z = -2.2f,
+            x = 10.6f, y = 1.15f, z = -2.1f,
             r = 0.34f, g = 0.22f, b = 0.14f,
+        ),
+        WorldItemDef(
+            id = "bed_awakening_hide",
+            name = "Debaixo da Cama",
+            description = "Abaixe-se e esconda-se sob a cama antiga.",
+            kind = InteractKind.HIDE_BED,
+            x = 8.4f, y = 0.35f, z = -4.9f,
+            r = 0.48f, g = 0.24f, b = 0.18f,
+        ),
+        WorldItemDef(
+            id = "bed_nw_hide",
+            name = "Debaixo da Cama",
+            description = "Abaixe-se e esconda-se sob a cama do quarto antigo.",
+            kind = InteractKind.HIDE_BED,
+            x = -9.6f, y = 0.35f, z = -13.2f,
+            r = 0.48f, g = 0.24f, b = 0.18f,
         ),
         WorldItemDef(
             id = "fuse_box",
@@ -378,9 +472,17 @@ object WorldMap3D {
         list.add(BoxCollider("ext_west", -12.3f, -8.2f, -11.9f, 10.2f))
         list.add(BoxCollider("ext_east", 11.9f, -8.2f, 12.3f, 10.2f))
 
-        // North wall at Z = -8 (cellar doorway X in [-0.75, 0.75])
-        list.add(BoxCollider("house_north_w", -12.2f, -8.2f, -0.75f, -7.8f))
-        list.add(BoxCollider("house_north_e", 0.75f, -8.2f, 12.2f, -7.8f))
+        // Exterior walls of the two new North wings (X: -12.2..-5.9 and 5.9..12.2, Z: -16.2..-7.8)
+        list.add(BoxCollider("ext_west_north", -12.3f, -16.2f, -11.9f, -7.8f))
+        list.add(BoxCollider("ext_east_north", 11.9f, -16.2f, 12.3f, -7.8f))
+        list.add(BoxCollider("nw_room_north", -12.3f, -16.3f, -5.9f, -15.9f))
+        list.add(BoxCollider("ne_stair_north", 5.9f, -16.3f, 12.3f, -15.9f))
+
+        // North wall at Z = -8 (doorways at cellar X in [-0.75,0.75], NW bedroom X in [-9.2,-7.75], Stair hall X in [6.85,8.30])
+        list.add(BoxCollider("house_north_w1", -12.2f, -8.2f, -9.2f, -7.8f))
+        list.add(BoxCollider("house_north_w2", -7.75f, -8.2f, -0.75f, -7.8f))
+        list.add(BoxCollider("house_north_e1", 0.75f, -8.2f, 6.85f, -7.8f))
+        list.add(BoxCollider("house_north_e2", 8.30f, -8.2f, 12.2f, -7.8f))
 
         // Cellar walls (X: -6..6, Z: -16..-8)
         list.add(BoxCollider("cellar_w", -6.3f, -16.2f, -5.9f, -7.8f))
@@ -397,18 +499,29 @@ object WorldMap3D {
         list.add(BoxCollider("hall_e2", 2.85f, -0.75f, 3.15f, 6.1f))
         list.add(BoxCollider("hall_e3", 2.85f, -8.0f, 3.15f, -2.2f))
 
-        // East-West room partitions at Z = 2 (between Living/Study and Kitchen/GrannyRoom)
+        // East-West room partitions at Z = 2 (between Living/Study and Kitchen/AwakeningBedroom)
         list.add(BoxCollider("div_west_room", -12.0f, 1.85f, -3.0f, 2.15f))
         list.add(BoxCollider("div_east_room", 3.0f, 1.85f, 12.0f, 2.15f))
 
-        // Furniture colliders
+        // Furniture colliders (carefully placed so corridors & doors never snag!)
         list.add(BoxCollider("furn_living_table", -7.0f, 7.8f, -5.4f, 9.0f))
+        list.add(BoxCollider("furn_living_sofa", -10.3f, 3.2f, -7.6f, 4.4f))
         list.add(BoxCollider("furn_fireplace", -11.9f, 5.0f, -10.8f, 7.0f))
         list.add(BoxCollider("furn_kitchen_counter", 8.8f, 7.8f, 11.4f, 9.4f))
         list.add(BoxCollider("furn_butcher_table", 6.2f, 4.4f, 8.4f, 6.2f))
         list.add(BoxCollider("furn_study_desk", -10.6f, -6.2f, -8.6f, -4.8f))
-        list.add(BoxCollider("furn_granny_bed", 7.8f, -7.2f, 11.2f, -4.8f))
-        list.add(BoxCollider("furn_wardrobe", 10.2f, -3.0f, 11.6f, -1.4f))
+        // Awakening Bedroom furniture
+        list.add(BoxCollider("furn_awakening_bed", 7.4f, -6.9f, 10.6f, -4.9f))
+        list.add(BoxCollider("furn_awakening_nightstand", 9.4f, -4.6f, 10.4f, -3.7f))
+        list.add(BoxCollider("furn_awakening_dresser", 4.2f, -7.8f, 5.8f, -6.8f))
+        list.add(BoxCollider("furn_wardrobe", 10.3f, -2.9f, 11.7f, -1.3f))
+        // North-West Master Bedroom furniture
+        list.add(BoxCollider("furn_nw_bed", -11.4f, -15.2f, -8.4f, -13.2f))
+        list.add(BoxCollider("furn_nw_wardrobe", -7.4f, -15.4f, -6.2f, -13.8f))
+        // North-East Wooden Staircase side rails (keeps player safely on the steps!)
+        list.add(BoxCollider("stair_rail_w", 6.85f, -15.6f, 7.15f, -10.1f))
+        list.add(BoxCollider("stair_rail_e", 11.55f, -15.6f, 11.85f, -10.1f))
+        // Cellar crates
         list.add(BoxCollider("furn_cellar_crates", -4.6f, -14.8f, -2.8f, -13.0f))
         return list
     }

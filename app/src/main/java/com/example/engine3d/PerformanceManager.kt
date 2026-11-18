@@ -9,11 +9,14 @@ enum class QualityTier(
     val drawDistance: Float,
     val maxDynamicLights: Int,
     val enableParticles: Boolean,
+    val enableShadows: Boolean = true,
+    val volumetricFogLayers: Int = 12,
+    val textureSizePx: Int = 256,
 ) {
-    ULTRA("Ultra", 1.00f, 44f, 4, true),
-    HIGH("Alta", 0.85f, 34f, 3, true),
-    MEDIUM("Média", 0.70f, 25f, 2, true),
-    LOW("Baixa", 0.55f, 18f, 1, false);
+    ULTRA("Ultra", 1.00f, 44f, 4, true, enableShadows = true, volumetricFogLayers = 18, textureSizePx = 256),
+    HIGH("Alta", 0.85f, 34f, 3, true, enableShadows = true, volumetricFogLayers = 12, textureSizePx = 256),
+    MEDIUM("Média", 0.70f, 25f, 2, true, enableShadows = true, volumetricFogLayers = 6, textureSizePx = 128),
+    LOW("Baixa", 0.55f, 18f, 1, false, enableShadows = false, volumetricFogLayers = 0, textureSizePx = 128);
 
     fun stepDown(): QualityTier = when (this) {
         ULTRA -> HIGH
