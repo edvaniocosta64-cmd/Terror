@@ -68,10 +68,11 @@ fun MainMenuScreen(
     onContinueSave: (GameSave) -> Unit,
     onOpenSaves: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSignOutCompleted: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember { CredentialManager.create(context) }
+    val credentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
 
     val latestSave = (savesState as? SavesUiState.Success)?.saves?.firstOrNull()
 
@@ -129,7 +130,7 @@ fun MainMenuScreen(
                 }
 
                 TextButton(
-                    onClick = { signOutPlayer(credentialManager, scope) },
+                    onClick = { signOutPlayer(credentialManager, scope, onSignOutCompleted) },
                     modifier = Modifier.testTag("sign_out_button"),
                 ) {
                     Icon(

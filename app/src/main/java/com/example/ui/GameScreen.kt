@@ -273,10 +273,12 @@ fun GameScreen(
         }
 
         // Note Reader Modal
-        if (hud.activeNoteTitle != null && hud.activeNoteBody != null) {
+        val noteTitle = hud.activeNoteTitle
+        val noteBody = hud.activeNoteBody
+        if (noteTitle != null && noteBody != null) {
             NoteReaderOverlay(
-                title = hud.activeNoteTitle!!,
-                body = hud.activeNoteBody!!,
+                title = noteTitle,
+                body = noteBody,
                 onClose = { gameEngine.dismissNote() },
             )
         }

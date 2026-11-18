@@ -143,6 +143,7 @@ class HorrorGlRenderer(
             GLES20.glClearColor(0.024f, 0.032f, 0.052f, 1.0f)
         }
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        if (programId == 0) return
 
         GLES20.glUseProgram(programId)
 

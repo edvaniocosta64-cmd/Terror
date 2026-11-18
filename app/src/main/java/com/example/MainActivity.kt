@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
@@ -12,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,6 +31,7 @@ import com.example.ui.theme.ProjectDarknessTheme
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.MainViewModel
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -36,6 +39,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOf
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     val listener = FirebaseAuth.AuthStateListener { auth ->
@@ -43,6 +47,22 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     }
     addAuthStateListener(listener)
     awaitClose { removeAuthStateListener(listener) }
+}
+
+private fun getOrInitFirebaseAuth(context: Context): FirebaseAuth? {
+    return try {
+        val appCtx = context.applicationContext ?: context
+        if (FirebaseApp.getApps(appCtx).isEmpty()) {
+            FirebaseApp.initializeApp(appCtx)
+        }
+        if (FirebaseApp.getApps(appCtx).isNotEmpty()) {
+            Firebase.auth
+        } else {
+            null
+        }
+    } catch (_: Throwable) {
+        null
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -84,19 +104,31 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigation(
     deviceMaxRefreshHz: Int,
-    auth: FirebaseAuth = Firebase.auth,
+    authOverride: FirebaseAuth? = null,
 ) {
-    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val context = LocalContext.current
+    val auth = remember(context, authOverride) { authOverride ?: getOrInitFirebaseAuth(context) }
+    val authFlow = remember(auth) { auth?.authStateFlow() ?: flowOf(null) }
+    val currentUser by authFlow.collectAsStateWithLifecycle(initialValue = auth?.currentUser)
+    var offlineSession by remember { mutableStateOf(false) }
+
     val user = currentUser
 
-    if (user == null) {
-        AuthScreen(onAuthSuccess = {})
+    if (user == null && !offlineSession) {
+        AuthScreen(
+            onAuthSuccess = {},
+            onContinueOffline = { offlineSession = true },
+        )
     } else {
-        key(user.uid) {
+        val activeUserId = user?.uid ?: SaveRepository.OFFLINE_USER_ID
+        val isOfflineMode = user == null
+        key(activeUserId) {
             AuthenticatedAppRoot(
-                currentUserId = user.uid,
-                userEmail = user.email,
+                currentUserId = activeUserId,
+                userEmail = user?.email ?: "Jogador Offline",
+                isOfflineMode = isOfflineMode,
                 deviceMaxRefreshHz = deviceMaxRefreshHz,
+                onSignOutCompleted = { offlineSession = false },
             )
         }
     }
@@ -106,9 +138,10 @@ fun AppNavigation(
 private fun AuthenticatedAppRoot(
     currentUserId: String,
     userEmail: String?,
+    isOfflineMode: Boolean,
     deviceMaxRefreshHz: Int,
+    onSignOutCompleted: () -> Unit,
 ) {
-    val context = LocalContext.current
     val viewModel: MainViewModel = viewModel(
         key = currentUserId,
         factory = viewModelFactory {
@@ -116,10 +149,22 @@ private fun AuthenticatedAppRoot(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val databaseId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(databaseId)
+                val saveRepo = if (isOfflineMode || FirebaseApp.getApps(app).isEmpty()) {
+                    SaveRepository(
+                        db = null,
+                        auth = null,
+                        localFilesDir = app.filesDir,
+                    )
+                } else {
+                    val databaseId = app.getString(R.string.firestore_database_id)
+                    SaveRepository(
+                        db = FirebaseFirestore.getInstance(databaseId),
+                        auth = Firebase.auth,
+                        localFilesDir = app.filesDir,
+                    )
+                }
                 MainViewModel(
-                    saveRepository = SaveRepository(db),
+                    saveRepository = saveRepo,
                     settingsRepository = SettingsRepository(app),
                     currentUserId = currentUserId,
                 )
@@ -157,6 +202,7 @@ private fun AuthenticatedAppRoot(
                 openedFromGame.value = false
                 viewModel.navigateTo(AppScreen.SETTINGS)
             },
+            onSignOutCompleted = onSignOutCompleted,
         )
 
         AppScreen.SAVES -> SaveSlotsScreen(

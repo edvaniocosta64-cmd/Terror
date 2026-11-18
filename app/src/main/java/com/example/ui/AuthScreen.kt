@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,23 +11,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -56,6 +58,7 @@ import com.example.ui.theme.BoneParchment
 import com.example.ui.theme.CrimsonBlood
 import com.example.ui.theme.FogMist
 import com.example.ui.theme.LanternAmber
+import com.example.ui.theme.ObsidianOutline
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.ObsidianVoid
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -63,8 +66,10 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -74,22 +79,28 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AuthScreen(
     onAuthSuccess: () -> Unit,
+    onContinueOffline: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember { CredentialManager.create(context) }
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
+    val firebaseAvailable = remember(context) { isFirebaseReady(context) }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = onAuthSuccess,
-            onUnauthenticated = {},
-            scope = scope,
-        )
+    LaunchedEffect(firebaseAvailable, credentialManager) {
+        if (firebaseAvailable && credentialManager != null) {
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = onAuthSuccess,
+                onUnauthenticated = {},
+                scope = scope,
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(ObsidianVoid)) {
@@ -149,7 +160,11 @@ fun AuthScreen(
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
-                        text = "Conecte sua conta Google para salvar seu progresso na nuvem e retomar a história a qualquer momento.",
+                        text = if (firebaseAvailable) {
+                            "Conecte sua conta Google para salvar seu progresso na nuvem ou jogue localmente no aparelho."
+                        } else {
+                            "Serviço de nuvem indisponível nesta compilação. Você pode jogar o Modo História completo com salvamento local."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = FogMist,
                         textAlign = TextAlign.Center,
@@ -166,60 +181,110 @@ fun AuthScreen(
                         )
                     }
 
-                    Button(
-                        onClick = {
-                            errorMessage = null
-                            isLoading = true
-                            onGoogleSignInClicked(
-                                context = context,
-                                credentialManager = credentialManager,
-                                onAuthSuccess = {
-                                    isLoading = false
-                                    onAuthSuccess()
-                                },
-                                onAuthError = { msg ->
-                                    isLoading = false
-                                    errorMessage = msg
-                                },
-                                onAuthCancelled = {
-                                    isLoading = false
-                                },
-                                scope = scope,
-                            )
-                        },
+                    if (firebaseAvailable && credentialManager != null) {
+                        Button(
+                            onClick = {
+                                errorMessage = null
+                                isLoading = true
+                                onGoogleSignInClicked(
+                                    context = context,
+                                    credentialManager = credentialManager,
+                                    onAuthSuccess = {
+                                        isLoading = false
+                                        onAuthSuccess()
+                                    },
+                                    onAuthError = { msg ->
+                                        isLoading = false
+                                        errorMessage = msg
+                                    },
+                                    onAuthCancelled = {
+                                        isLoading = false
+                                    },
+                                    scope = scope,
+                                )
+                            },
+                            enabled = !isLoading,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CrimsonBlood,
+                                contentColor = BoneParchment,
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("google_sign_in_button"),
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = BoneParchment,
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.LockOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.size(10.dp))
+                                Text(
+                                    text = "Entrar com Google",
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    OutlinedButton(
+                        onClick = onContinueOffline,
                         enabled = !isLoading,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CrimsonBlood,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (firebaseAvailable) {
+                                ObsidianVoid.copy(alpha = 0.55f)
+                            } else {
+                                CrimsonBlood
+                            },
                             contentColor = BoneParchment,
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(54.dp)
-                            .testTag("google_sign_in_button"),
+                            .height(50.dp)
+                            .border(
+                                width = 1.dp,
+                                color = if (firebaseAvailable) ObsidianOutline else CrimsonBlood,
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .testTag("offline_play_button"),
                     ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = BoneParchment,
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Filled.LockOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(modifier = Modifier.size(10.dp))
-                            Text(
-                                text = "Entrar com Google",
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = if (firebaseAvailable) LanternAmber else BoneParchment,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                            text = "Jogar Offline (Salvamento Local)",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+private fun isFirebaseReady(context: Context): Boolean {
+    return try {
+        val appCtx = context.applicationContext ?: context
+        if (FirebaseApp.getApps(appCtx).isEmpty()) {
+            FirebaseApp.initializeApp(appCtx)
+        }
+        FirebaseApp.getApps(appCtx).isNotEmpty()
+    } catch (_: Throwable) {
+        false
     }
 }
 
@@ -230,7 +295,16 @@ private fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope,
 ) {
-    if (Firebase.auth.currentUser != null) {
+    if (!isFirebaseReady(context)) {
+        onUnauthenticated()
+        return
+    }
+    val currentUser = try {
+        Firebase.auth.currentUser
+    } catch (_: Throwable) {
+        null
+    }
+    if (currentUser != null) {
         onAuthSuccess()
         return
     }
@@ -250,7 +324,8 @@ private fun attemptAutoSignIn(
 
     scope.launch {
         try {
-            val cred = credentialManager.getCredential(context, request).credential
+            val activityContext = context.findActivity() ?: context
+            val cred = credentialManager.getCredential(activityContext, request).credential
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
                 Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
@@ -258,7 +333,9 @@ private fun attemptAutoSignIn(
             } else {
                 onUnauthenticated()
             }
-        } catch (_: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
             onUnauthenticated()
         }
     }
@@ -272,9 +349,13 @@ private fun onGoogleSignInClicked(
     onAuthCancelled: () -> Unit,
     scope: CoroutineScope,
 ) {
+    if (!isFirebaseReady(context)) {
+        onAuthError("Firebase indisponível neste dispositivo. Use o modo offline abaixo.")
+        return
+    }
     val clientId = resolveDefaultWebClientId(context)
     if (clientId == null) {
-        onAuthError("Configuração do Google Sign-In ausente (default_web_client_id).")
+        onAuthError("Configuração do Google Sign-In ausente. Use o modo offline abaixo.")
         return
     }
     val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
@@ -284,7 +365,7 @@ private fun onGoogleSignInClicked(
 
     scope.launch {
         try {
-            val activityContext = context as? Activity ?: context
+            val activityContext = context.findActivity() ?: context
             val cred = credentialManager.getCredential(activityContext, request).credential
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
@@ -293,33 +374,44 @@ private fun onGoogleSignInClicked(
             } else {
                 onAuthError("Tipo de credencial inesperado.")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Google Sign-In cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
-        } catch (e: Exception) {
-            Log.e("Auth", "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Falha ao entrar com o Google.")
+        } catch (t: Throwable) {
+            Log.e("Auth", "Google Sign-In failed", t)
+            onAuthError(t.localizedMessage ?: "Falha ao entrar com o Google. Você pode jogar offline abaixo.")
         }
     }
 }
 
 fun signOutPlayer(
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     scope: CoroutineScope,
     onComplete: () -> Unit = {},
 ) {
     scope.launch {
         withContext(NonCancellable) {
             try {
-                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+                credentialManager?.clearCredentialState(ClearCredentialStateRequest())
             } catch (e: Exception) {
                 Log.w("Auth", "Failed to clear credential state: ${e.message}")
             } finally {
-                Firebase.auth.signOut()
+                try {
+                    Firebase.auth.signOut()
+                } catch (_: Throwable) {
+                }
                 onComplete()
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Suppress("DiscouragedApi")

@@ -79,4 +79,23 @@ class ExampleRobolectricTest {
         composeTestRule.onNodeWithTag("fps_chip_fps_30").assertIsDisplayed()
         composeTestRule.onNodeWithTag("quality_chip_auto").assertIsDisplayed()
     }
+
+    @Test
+    fun `auth screen renders cleanly without crashing when firebase is uninitialized`() {
+        composeTestRule.setContent {
+            ProjectDarknessTheme {
+                com.example.ui.AuthScreen(onAuthSuccess = {}, onContinueOffline = {})
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("offline_play_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun `main activity launches cleanly without uncaught exception`() {
+        val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java)
+        controller.setup()
+        val activity = controller.get()
+        org.junit.Assert.assertFalse(activity.isFinishing)
+    }
 }
