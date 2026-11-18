@@ -1,5 +1,6 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,9 +42,10 @@ class MainViewModel(
     private val saveRepository: SaveRepository,
     private val settingsRepository: SettingsRepository,
     private val currentUserId: String,
+    appContext: Context? = null,
 ) : ViewModel() {
 
-    val audioEngine = HorrorAudioEngine()
+    val audioEngine = HorrorAudioEngine(appContext)
     val gameEngine = HorrorGameEngine(audioEngine)
     val performanceManager = AutoQualityController()
 

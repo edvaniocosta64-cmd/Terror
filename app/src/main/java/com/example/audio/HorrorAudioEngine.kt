@@ -1,8 +1,12 @@
 package com.example.audio
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.MediaPlayer
+import android.media.SoundPool
+import com.example.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,7 +14,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -18,11 +24,22 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
+enum class FootstepSurface {
+    WOOD,
+    DIRT,
+    TILE_STONE,
+}
+
 /**
- * Real-time stereo horror music & spatial SFX mixer backed by a single reliable MODE_STREAM
- * AudioTrack (eliminates Android MODE_STATIC underruns and AudioFlinger track limits on budget devices).
+ * Hybrid horror audio engine:
+ * - Real Ogg Vorbis SFX preloaded in SoundPool (varied surface footsteps, doors, locks, creaks, hits, tension)
+ * - Real Brazilian Portuguese voice lines played via non-blocking MediaPlayer with spatial attenuation & music ducking
+ * - Real looping environmental ambience layers (night crickets, wind, interior horror drone)
+ * - Continuous MODE_STREAM AudioTrack horror ostinato & dynamic heartbeat + pure-Kotlin fallback for JVM unit tests
  */
-class HorrorAudioEngine {
+class HorrorAudioEngine(
+    private val context: Context? = null,
+) {
     private val sampleRate = 22050
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var ambientJob: Job? = null
@@ -52,6 +69,12 @@ class HorrorAudioEngine {
     private var isPaused = false
 
     @Volatile
+    private var isReleased = false
+
+    @Volatile
+    private var isVoicePlaying = false
+
+    @Volatile
     private var listenerX = 0f
 
     @Volatile
@@ -60,7 +83,57 @@ class HorrorAudioEngine {
     @Volatile
     private var listenerYawRad = PI.toFloat()
 
-    // Mixer synthesizer phases
+    // Anti-repetition indices for natural footstep variation
+    private var lastWoodStepIdx = -1
+    private var lastDirtStepIdx = -1
+    private var lastTileStepIdx = -1
+    private var lastGrannyStepIdx = -1
+    private var lastDoorCreakIdx = -1
+    private var lastWoodCreakIdx = -1
+    private var lastBreathIdx = -1
+    private val stepRng = Random(1337)
+
+    // Real Android SoundPool & MediaPlayer backing
+    private var soundPool: SoundPool? = null
+    private val loadedSoundIds = ConcurrentHashMap.newKeySet<Int>()
+
+    private var spStepWood = IntArray(0)
+    private var spStepDirt = IntArray(0)
+    private var spStepTile = IntArray(0)
+    private var spGrannyStep = IntArray(0)
+    private var spDoorOpen = 0
+    private var spDoorClose = 0
+    private var spDoorSlam = 0
+    private var spDoorCreak = IntArray(0)
+    private var spDoorknobRattle = 0
+    private var spLockRattle = 0
+    private var spUnlockDoor = 0
+    private var spWoodCreak = IntArray(0)
+    private var spWindowWind = 0
+    private var spDistantNoise = 0
+    private var spDistantMetal = 0
+    private var spHorrorSting = 0
+    private var spAmbushSurprise = 0
+    private var spBodyThud = 0
+    private var spBodyDrag = 0
+    private var spScaredBreath = IntArray(0)
+    private var spPickupKey = 0
+    private var spPickupItem = 0
+    private var spPaperNote = 0
+    private var spFlashlightClick = 0
+    private var spWireCut = 0
+
+    private val voiceLock = Any()
+    private val voiceGeneration = AtomicInteger(0)
+    private var activeVoicePlayer: MediaPlayer? = null
+
+    private val ambientPlayersLock = Any()
+    private var ambientInitStarted = false
+    private var ambCricketsPlayer: MediaPlayer? = null
+    private var ambWindPlayer: MediaPlayer? = null
+    private var ambHousePlayer: MediaPlayer? = null
+
+    // Mixer synthesizer phases (continuous horror score + heartbeat + unit-test mixer)
     private var phaseDroneLow = 0.0
     private var phaseDroneMid = 0.0
     private var phasePad1 = 0.0
@@ -76,7 +149,7 @@ class HorrorAudioEngine {
     private var noteIndex = 0
     private var rngState = 0x5A17C3L
 
-    // Software-mixed one-shot SFX & dialogue voices
+    // Software-mixed one-shot SFX & fallback cues
     private class ActiveSound(
         val pcm: ShortArray,
         val leftGain: Float,
@@ -110,10 +183,100 @@ class HorrorAudioEngine {
     private val grannyRoomVoice1: ShortArray by lazy { synthGrannySpeech(1) }
     private val grannySearchMutter: ShortArray by lazy { synthGrannySpeech(2) }
 
+    init {
+        initSoundPoolIfAvailable()
+    }
+
+    private fun initSoundPoolIfAvailable() {
+        val ctx = context?.applicationContext ?: context ?: return
+        try {
+            val sp = SoundPool.Builder()
+                .setMaxStreams(16)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .build()
+
+            sp.setOnLoadCompleteListener { _, sampleId, status ->
+                if (status == 0) {
+                    loadedSoundIds.add(sampleId)
+                }
+            }
+
+            fun load(resId: Int): Int = try {
+                sp.load(ctx, resId, 1)
+            } catch (_: Throwable) {
+                0
+            }
+
+            spStepWood = intArrayOf(
+                load(R.raw.sfx_step_wood_1),
+                load(R.raw.sfx_step_wood_2),
+                load(R.raw.sfx_step_wood_3),
+                load(R.raw.sfx_step_wood_4),
+            )
+            spStepDirt = intArrayOf(
+                load(R.raw.sfx_step_dirt_1),
+                load(R.raw.sfx_step_dirt_2),
+                load(R.raw.sfx_step_dirt_3),
+                load(R.raw.sfx_step_dirt_4),
+            )
+            spStepTile = intArrayOf(
+                load(R.raw.sfx_step_tile_1),
+                load(R.raw.sfx_step_tile_2),
+                load(R.raw.sfx_step_tile_3),
+                load(R.raw.sfx_step_tile_4),
+            )
+            spGrannyStep = intArrayOf(
+                load(R.raw.sfx_granny_step_1),
+                load(R.raw.sfx_granny_step_2),
+                load(R.raw.sfx_granny_step_3),
+            )
+            spDoorOpen = load(R.raw.sfx_door_open)
+            spDoorClose = load(R.raw.sfx_door_close)
+            spDoorSlam = load(R.raw.sfx_door_slam)
+            spDoorCreak = intArrayOf(
+                load(R.raw.sfx_door_creak_1),
+                load(R.raw.sfx_door_creak_2),
+            )
+            spDoorknobRattle = load(R.raw.sfx_doorknob_rattle)
+            spLockRattle = load(R.raw.sfx_lock_rattle)
+            spUnlockDoor = load(R.raw.sfx_unlock_door)
+            spWoodCreak = intArrayOf(
+                load(R.raw.sfx_wood_creak_1),
+                load(R.raw.sfx_wood_creak_2),
+            )
+            spWindowWind = load(R.raw.sfx_window_wind)
+            spDistantNoise = load(R.raw.sfx_distant_noise)
+            spDistantMetal = load(R.raw.sfx_distant_metal)
+            spHorrorSting = load(R.raw.sfx_horror_sting)
+            spAmbushSurprise = load(R.raw.sfx_ambush_surprise)
+            spBodyThud = load(R.raw.sfx_body_thud)
+            spBodyDrag = load(R.raw.sfx_body_drag)
+            spScaredBreath = intArrayOf(
+                load(R.raw.sfx_scared_breath_1),
+                load(R.raw.sfx_scared_breath_2),
+            )
+            spPickupKey = load(R.raw.sfx_pickup_key)
+            spPickupItem = load(R.raw.sfx_pickup_item)
+            spPaperNote = load(R.raw.sfx_paper_note)
+            spFlashlightClick = load(R.raw.sfx_flashlight_click)
+            spWireCut = load(R.raw.sfx_wire_cut)
+
+            soundPool = sp
+        } catch (_: Throwable) {
+            soundPool = null
+        }
+    }
+
     fun updateVolumes(master: Float, ambient: Float, sfx: Float) {
         masterVol = master.coerceIn(0f, 1f)
         ambientVol = ambient.coerceIn(0f, 1f)
         sfxVol = sfx.coerceIn(0f, 1f)
+        updateAmbientLoopVolumes()
     }
 
     fun updateListener(x: Float, z: Float, yawRad: Float) {
@@ -130,6 +293,7 @@ class HorrorAudioEngine {
         isInsideHouse = insideHouse
         heartbeatIntensity = dangerLevel.coerceIn(0f, 1f)
         musicTension = suspenseLevel.coerceIn(0f, 1f)
+        updateAmbientLoopVolumes()
     }
 
     fun setMenuMode(inMenu: Boolean) {
@@ -138,13 +302,38 @@ class HorrorAudioEngine {
             heartbeatIntensity = 0f
             musicTension = 0.25f
         }
+        updateAmbientLoopVolumes()
     }
 
     fun setPaused(paused: Boolean) {
         isPaused = paused
+        synchronized(ambientPlayersLock) {
+            listOf(ambCricketsPlayer, ambWindPlayer, ambHousePlayer).forEach { mp ->
+                try {
+                    if (paused && mp?.isPlaying == true) {
+                        mp.pause()
+                    } else if (!paused && !isReleased && mp != null && !mp.isPlaying) {
+                        mp.start()
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        synchronized(voiceLock) {
+            try {
+                if (paused && activeVoicePlayer?.isPlaying == true) {
+                    activeVoicePlayer?.pause()
+                } else if (!paused && !isReleased && activeVoicePlayer != null && !activeVoicePlayer!!.isPlaying) {
+                    activeVoicePlayer?.start()
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        updateAmbientLoopVolumes()
     }
 
     fun startAmbient() {
+        ensureRealAmbientLayersStarted()
         if (ambientJob?.isActive == true) return
         ambientJob = scope.launch {
             var track: AudioTrack? = null
@@ -215,6 +404,80 @@ class HorrorAudioEngine {
         }
     }
 
+    private fun ensureRealAmbientLayersStarted() {
+        val ctx = context?.applicationContext ?: context ?: return
+        synchronized(ambientPlayersLock) {
+            if (ambientInitStarted || isReleased) return
+            ambientInitStarted = true
+        }
+        scope.launch(Dispatchers.IO) {
+            fun createLooping(resId: Int): MediaPlayer? {
+                return try {
+                    MediaPlayer.create(ctx, resId)?.apply {
+                        isLooping = true
+                        setVolume(0f, 0f)
+                        if (!isPaused && !isReleased) {
+                            start()
+                        }
+                    }
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+
+            val crickets = createLooping(R.raw.amb_night_crickets)
+            val wind = createLooping(R.raw.amb_wind_loop)
+            val house = createLooping(R.raw.amb_house_horror)
+
+            synchronized(ambientPlayersLock) {
+                if (isReleased) {
+                    listOfNotNull(crickets, wind, house).forEach {
+                        try {
+                            it.release()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                    return@launch
+                }
+                ambCricketsPlayer = crickets
+                ambWindPlayer = wind
+                ambHousePlayer = house
+            }
+            updateAmbientLoopVolumes()
+        }
+    }
+
+    private fun updateAmbientLoopVolumes() {
+        val duck = if (isVoicePlaying) 0.52f else 1.0f
+        val base = masterVol * ambientVol * duck
+        val cricketsGain = when {
+            isPaused || isReleased -> 0f
+            isMenuMode -> base * 0.42f
+            isInsideHouse -> base * 0.08f
+            else -> base * 0.62f
+        }
+        val windGain = when {
+            isPaused || isReleased -> 0f
+            isMenuMode -> base * 0.34f
+            isInsideHouse -> base * (0.20f + 0.14f * musicTension)
+            else -> base * 0.56f
+        }
+        val houseGain = when {
+            isPaused || isReleased -> 0f
+            isMenuMode -> base * 0.28f
+            isInsideHouse -> base * (0.36f + 0.34f * musicTension)
+            else -> base * 0.14f
+        }
+        synchronized(ambientPlayersLock) {
+            try {
+                ambCricketsPlayer?.setVolume(cricketsGain, cricketsGain)
+                ambWindPlayer?.setVolume(windGain, windGain)
+                ambHousePlayer?.setVolume(houseGain, houseGain)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     /**
      * Synthesizes one block of continuous stereo horror music, ambient wind, heartbeat,
      * and software-mixed spatial SFX/voices into [outStereo] (interleaved L, R shorts).
@@ -222,7 +485,8 @@ class HorrorAudioEngine {
     fun mixStereoFrame(outStereo: ShortArray) {
         val frameCount = outStereo.size / 2
         val master = masterVol
-        val musicGain = master * ambientVol
+        val duck = if (isVoicePlaying) 0.55f else 1.0f
+        val musicGain = master * ambientVol * duck
         val danger = if (isMenuMode) 0f else heartbeatIntensity
         val tension = if (isMenuMode) 0.25f else musicTension
         val bpm = 58.0 + danger * 86.0
@@ -240,9 +504,10 @@ class HorrorAudioEngine {
         val roadMenuNotes = doubleArrayOf(220.00, 261.63, 246.94, 329.63, 349.23, 329.63, 261.63, 246.94)
 
         val currentNotes = if (isInsideHouse) houseNotes else roadMenuNotes
+        val hasRealAmbient = ambHousePlayer != null || ambCricketsPlayer != null
 
         for (f in 0 until frameCount) {
-            // Stereo band-limited atmospheric wind (audible on phone speakers!)
+            // Stereo band-limited atmospheric wind (scaled down when real OGG ambient loops are active)
             rngState = (rngState * 6364136223846793005L + 1442695040888963407L)
             val noiseL = ((rngState ushr 33).toInt() / 2147483647.0) * 2.0 - 1.0
             rngState = (rngState * 6364136223846793005L + 1442695040888963407L)
@@ -255,19 +520,19 @@ class HorrorAudioEngine {
             lfoPhase += 2.0 * PI * 0.16 * dtSample
             val windSweep = 0.55 + 0.45 * sin(lfoPhase)
 
-            // Warm horror pad + speaker-audible mid-bass drone (110 Hz / 146.8 Hz + octave harmonics!)
+            // Warm horror pad + speaker-audible mid-bass drone
             val rootFreq = if (isInsideHouse) 146.83 else 110.00 // D3 or A2
             phaseDroneLow += 2.0 * PI * rootFreq * dtSample
-            phaseDroneMid += 2.0 * PI * (rootFreq * 1.498) * dtSample // eerie fifth/tritone shimmer
+            phaseDroneMid += 2.0 * PI * (rootFreq * 1.498) * dtSample
             phasePad1 += 2.0 * PI * (rootFreq * 2.0) * dtSample
-            phasePad2 += 2.0 * PI * (rootFreq * 2.378) * dtSample // minor third pad
+            phasePad2 += 2.0 * PI * (rootFreq * 2.378) * dtSample
             phaseString += 2.0 * PI * (rootFreq * 3.0 + sin(lfoPhase * 2.8) * 2.4) * dtSample
 
-            val drone = 0.24 * sin(phaseDroneLow) + 0.18 * sin(phaseDroneMid)
-            val darkPad = (0.16 * sin(phasePad1) + 0.13 * sin(phasePad2)) * (0.72 + 0.28 * sin(lfoPhase * 1.3))
-            val bowedString = (0.08 + 0.16 * tension) * sin(phaseString) * (0.65 + 0.35 * sin(lfoPhase * 2.1))
+            val drone = (0.20 * sin(phaseDroneLow) + 0.15 * sin(phaseDroneMid)) * (if (hasRealAmbient) 0.65 else 1.0)
+            val darkPad = (0.14 * sin(phasePad1) + 0.11 * sin(phasePad2)) * (0.72 + 0.28 * sin(lfoPhase * 1.3))
+            val bowedString = (0.07 + 0.15 * tension) * sin(phaseString) * (0.65 + 0.35 * sin(lfoPhase * 2.1))
 
-            // Haunting old-piano / music-box ostinato (always active in Menu, Road & House!)
+            // Haunting old-piano / music-box ostinato (always active in Menu, Road & House)
             noteTimer += dtSample
             if (noteTimer >= notePeriod) {
                 noteTimer -= notePeriod
@@ -279,9 +544,9 @@ class HorrorAudioEngine {
             phasePiano += 2.0 * PI * freq * dtSample
             val pianoEnv = exp(-noteTimer * (if (isInsideHouse) 2.5 else 2.1))
             val pianoGain = when {
-                isMenuMode -> 0.28
-                isInsideHouse -> 0.24 + 0.12 * tension
-                else -> 0.22 + 0.10 * tension
+                isMenuMode -> 0.26
+                isInsideHouse -> 0.22 + 0.11 * tension
+                else -> 0.20 + 0.10 * tension
             }
             val pianoBody = pianoEnv * (
                 0.68 * sin(phasePiano) +
@@ -289,19 +554,17 @@ class HorrorAudioEngine {
                     0.10 * sin(phasePiano * 3.01)
                 ) * pianoGain
 
-            // Deep ominous piano bass hit every 2 notes (at audible 146.8Hz / 110Hz octave mix)
             val bassFreq = if (isInsideHouse) 146.83 else 110.0
             phaseBass += 2.0 * PI * bassFreq * dtSample
             val bassTime = noteTimer + (if (noteIndex % 2 == 1) notePeriod else 0.0)
             val bassEnv = exp(-bassTime * 1.8)
-            val bassTone = bassEnv * (0.6 * sin(phaseBass) + 0.4 * sin(phaseBass * 2.0)) * 0.20
+            val bassTone = bassEnv * (0.6 * sin(phaseBass) + 0.4 * sin(phaseBass * 2.0)) * 0.18
 
-            // Subtle stereo width for piano & strings
             val panMod = 0.14 * sin(lfoPhase * 1.7 + noteIndex * 0.9)
             val pianoL = pianoBody * (1.0 - panMod)
             val pianoR = pianoBody * (1.0 + panMod)
 
-            // Dynamic lub-dub heartbeat (speaker-audible 98Hz / 82Hz + harmonic punch)
+            // Dynamic lub-dub heartbeat
             heartTimer += dtSample
             if (heartTimer >= beatPeriod) heartTimer -= beatPeriod
             var heart = 0.0
@@ -316,11 +579,11 @@ class HorrorAudioEngine {
                 heart *= danger * 0.55
             }
 
-            val windAmt = if (isInsideHouse) 0.26 else if (isMenuMode) 0.20 else 0.34
+            val windAmt = if (hasRealAmbient) 0.05 else if (isInsideHouse) 0.24 else if (isMenuMode) 0.18 else 0.30
             var mixL = (windFilterL * windSweep * windAmt + drone + darkPad + bowedString * 0.9 + pianoL + bassTone + heart) * musicGain
             var mixR = (windFilterR * windSweep * windAmt + drone + darkPad + bowedString * 1.1 + pianoR + bassTone + heart) * musicGain
 
-            // Mix active one-shot SFX & character voices
+            // Mix software fallback one-shot SFX when active
             if (activeSounds.isNotEmpty()) {
                 val it = activeSounds.iterator()
                 while (it.hasNext()) {
@@ -339,49 +602,408 @@ class HorrorAudioEngine {
             outStereo[f * 2 + 1] = (mixR.coerceIn(-0.98, 0.98) * Short.MAX_VALUE).toInt().toShort()
         }
 
-        // Remove finished one-shot sounds cleanly outside tight sample loop
         if (activeSounds.isNotEmpty()) {
             activeSounds.removeAll { it.cursor >= it.pcm.size }
         }
     }
 
-    fun playDoorCreak() = enqueueMono(doorCreakPcm, 0.85f)
-    fun playSlowDoorCreak(srcX: Float, srcZ: Float) = enqueueSpatial(slowDoorCreakPcm, 0.95f, srcX, srcZ, maxDist = 20f)
-    fun playDoorSlam() = enqueueMono(doorSlamPcm, 1.0f)
-    fun playLockedRattle() = enqueueMono(lockRattlePcm, 0.85f)
-    fun playDoorknobRattle(srcX: Float, srcZ: Float) = enqueueSpatial(doorknobRattlePcm, 0.95f, srcX, srcZ, maxDist = 18f)
-    fun playPickupKey() = enqueueMono(pickupPcm, 0.90f)
-    fun playFlashlightClick() = enqueueMono(clickPcm, 0.82f)
-    fun playFootstep(stealth: Boolean) = enqueueMono(if (stealth) stealthStepPcm else footstepPcm, if (stealth) 0.45f else 0.68f)
-    fun playSpatialFootstep(stealth: Boolean, srcX: Float, srcZ: Float) = enqueueSpatial(
-        if (stealth) stealthStepPcm else footstepPcm,
-        if (stealth) 0.52f else 0.82f,
-        srcX,
-        srcZ,
-        maxDist = 18f,
-    )
-    fun playHorrorSting() = enqueueMono(stingPcm, 1.0f)
-    fun playAmbushSurprise() = enqueueMono(ambushPcm, 1.0f)
-    fun playBodyThud() = enqueueMono(bodyThudPcm, 0.96f)
-    fun playWoodCreak() = enqueueMono(woodCreakPcm, 0.85f)
-    fun playSpatialWoodCreak(srcX: Float, srcZ: Float) = enqueueSpatial(woodCreakPcm, 0.88f, srcX, srcZ, maxDist = 20f)
-    fun playBodyDrag() = enqueueMono(bodyDragPcm, 0.80f)
-    fun playDistantNoise() = enqueueMono(distantNoisePcm, 0.75f)
-    fun playWindowWind(srcX: Float, srcZ: Float) = enqueueSpatial(windowWindPcm, 0.78f, srcX, srcZ, maxDist = 22f)
-    fun playDialogueCue(isGranny: Boolean) = enqueueMono(if (isGranny) grannyCuePcm else youthCuePcm, 0.75f)
+    // --- Real OGG + Fallback SFX Triggers ---
+
+    fun playDoorOpen() {
+        if (!playSpMono(spDoorOpen, 0.92f, jitterPitch = true)) {
+            enqueueMono(doorCreakPcm, 0.85f)
+        }
+    }
+
+    fun playDoorClose() {
+        if (!playSpMono(spDoorClose, 0.92f, jitterPitch = true)) {
+            enqueueMono(doorSlamPcm, 0.75f)
+        }
+    }
+
+    fun playDoorCreak() {
+        val idx = nextNonRepeating(spDoorCreak.size, lastDoorCreakIdx).also { lastDoorCreakIdx = it }
+        val sid = spDoorCreak.getOrNull(idx) ?: 0
+        if (!playSpMono(sid, 0.88f, rate = 0.94f + stepRng.nextFloat() * 0.12f)) {
+            enqueueMono(doorCreakPcm, 0.85f)
+        }
+    }
+
+    fun playSlowDoorCreak(srcX: Float, srcZ: Float) {
+        val sid = spDoorCreak.getOrNull(1) ?: spDoorCreak.getOrNull(0) ?: 0
+        if (!playSpSpatial(sid, 0.96f, srcX, srcZ, maxDist = 22f, rate = 0.88f)) {
+            enqueueSpatial(slowDoorCreakPcm, 0.95f, srcX, srcZ, maxDist = 20f)
+        }
+    }
+
+    fun playDoorSlam() {
+        if (!playSpMono(spDoorSlam, 1.0f, rate = 0.96f)) {
+            enqueueMono(doorSlamPcm, 1.0f)
+        }
+    }
+
+    fun playLockedRattle() {
+        if (!playSpMono(spLockRattle, 0.90f, jitterPitch = true)) {
+            enqueueMono(lockRattlePcm, 0.85f)
+        }
+    }
+
+    fun playUnlockDoor() {
+        if (!playSpMono(spUnlockDoor, 0.92f, rate = 1.0f)) {
+            enqueueMono(pickupPcm, 0.82f)
+        }
+    }
+
+    fun playDoorknobRattle(srcX: Float, srcZ: Float) {
+        if (!playSpSpatial(spDoorknobRattle, 0.96f, srcX, srcZ, maxDist = 20f)) {
+            enqueueSpatial(doorknobRattlePcm, 0.95f, srcX, srcZ, maxDist = 18f)
+        }
+    }
+
+    fun playPickupKey() {
+        if (!playSpMono(spPickupKey, 0.92f)) {
+            enqueueMono(pickupPcm, 0.90f)
+        }
+    }
+
+    fun playPickupItem() {
+        if (!playSpMono(spPickupItem, 0.92f, jitterPitch = true)) {
+            enqueueMono(pickupPcm, 0.85f)
+        }
+    }
+
+    fun playPaperNote() {
+        if (!playSpMono(spPaperNote, 0.90f, jitterPitch = true)) {
+            enqueueMono(pickupPcm, 0.72f)
+        }
+    }
+
+    fun playFlashlightClick() {
+        if (!playSpMono(spFlashlightClick, 0.88f, rate = 0.96f + stepRng.nextFloat() * 0.08f)) {
+            enqueueMono(clickPcm, 0.82f)
+        }
+    }
+
+    fun playWireCut() {
+        if (!playSpMono(spWireCut, 0.95f)) {
+            enqueueMono(clickPcm, 0.90f)
+        }
+    }
+
+    fun playFootstep(stealth: Boolean, surface: FootstepSurface = FootstepSurface.WOOD) {
+        val (arr, last) = when (surface) {
+            FootstepSurface.WOOD -> spStepWood to lastWoodStepIdx
+            FootstepSurface.DIRT -> spStepDirt to lastDirtStepIdx
+            FootstepSurface.TILE_STONE -> spStepTile to lastTileStepIdx
+        }
+        val idx = nextNonRepeating(arr.size, last)
+        when (surface) {
+            FootstepSurface.WOOD -> lastWoodStepIdx = idx
+            FootstepSurface.DIRT -> lastDirtStepIdx = idx
+            FootstepSurface.TILE_STONE -> lastTileStepIdx = idx
+        }
+        val sid = arr.getOrNull(idx) ?: 0
+        val gain = if (stealth) 0.42f else 0.74f
+        val rate = if (stealth) 0.88f + stepRng.nextFloat() * 0.08f else 0.94f + stepRng.nextFloat() * 0.13f
+        if (!playSpMono(sid, gain, rate = rate)) {
+            enqueueMono(if (stealth) stealthStepPcm else footstepPcm, if (stealth) 0.45f else 0.68f)
+        }
+    }
+
+    fun playSpatialFootstep(
+        stealth: Boolean,
+        srcX: Float,
+        srcZ: Float,
+        surface: FootstepSurface = FootstepSurface.WOOD,
+        isGranny: Boolean = true,
+    ) {
+        val arr = if (isGranny && spGrannyStep.isNotEmpty() && surface != FootstepSurface.DIRT) {
+            spGrannyStep
+        } else {
+            when (surface) {
+                FootstepSurface.WOOD -> spStepWood
+                FootstepSurface.DIRT -> spStepDirt
+                FootstepSurface.TILE_STONE -> spStepTile
+            }
+        }
+        val idx = if (isGranny && arr === spGrannyStep) {
+            nextNonRepeating(arr.size, lastGrannyStepIdx).also { lastGrannyStepIdx = it }
+        } else {
+            nextNonRepeating(arr.size, lastWoodStepIdx).also { lastWoodStepIdx = it }
+        }
+        val sid = arr.getOrNull(idx) ?: 0
+        val gain = if (stealth) 0.52f else if (isGranny) 0.92f else 0.80f
+        val rate = if (isGranny) 0.86f + stepRng.nextFloat() * 0.10f else 0.94f + stepRng.nextFloat() * 0.12f
+        if (!playSpSpatial(sid, gain, srcX, srcZ, maxDist = 20f, rate = rate)) {
+            enqueueSpatial(if (stealth) stealthStepPcm else footstepPcm, gain, srcX, srcZ, maxDist = 18f)
+        }
+    }
+
+    fun playHorrorSting() {
+        if (!playSpMono(spHorrorSting, 1.0f)) {
+            enqueueMono(stingPcm, 1.0f)
+        }
+    }
+
+    fun playAmbushSurprise() {
+        if (!playSpMono(spAmbushSurprise, 1.0f)) {
+            enqueueMono(ambushPcm, 1.0f)
+        }
+    }
+
+    fun playBodyThud() {
+        if (!playSpMono(spBodyThud, 0.98f)) {
+            enqueueMono(bodyThudPcm, 0.96f)
+        }
+    }
+
+    fun playWoodCreak() {
+        val idx = nextNonRepeating(spWoodCreak.size, lastWoodCreakIdx).also { lastWoodCreakIdx = it }
+        val sid = spWoodCreak.getOrNull(idx) ?: 0
+        if (!playSpMono(sid, 0.86f, jitterPitch = true)) {
+            enqueueMono(woodCreakPcm, 0.85f)
+        }
+    }
+
+    fun playSpatialWoodCreak(srcX: Float, srcZ: Float) {
+        val idx = nextNonRepeating(spWoodCreak.size, lastWoodCreakIdx).also { lastWoodCreakIdx = it }
+        val sid = spWoodCreak.getOrNull(idx) ?: 0
+        if (!playSpSpatial(sid, 0.90f, srcX, srcZ, maxDist = 22f, rate = 0.93f + stepRng.nextFloat() * 0.12f)) {
+            enqueueSpatial(woodCreakPcm, 0.88f, srcX, srcZ, maxDist = 20f)
+        }
+    }
+
+    fun playBodyDrag() {
+        if (!playSpMono(spBodyDrag, 0.88f, rate = 0.90f + stepRng.nextFloat() * 0.14f)) {
+            enqueueMono(bodyDragPcm, 0.80f)
+        }
+    }
+
+    fun playDistantNoise() {
+        val sid = if (stepRng.nextBoolean() && spDistantMetal != 0) spDistantMetal else spDistantNoise
+        if (!playSpMono(sid, 0.78f, rate = 0.92f + stepRng.nextFloat() * 0.12f)) {
+            enqueueMono(distantNoisePcm, 0.75f)
+        }
+    }
+
+    fun playWindowWind(srcX: Float, srcZ: Float) {
+        if (!playSpSpatial(spWindowWind, 0.82f, srcX, srcZ, maxDist = 24f)) {
+            enqueueSpatial(windowWindPcm, 0.78f, srcX, srcZ, maxDist = 22f)
+        }
+    }
+
+    fun playScaredBreath() {
+        val idx = nextNonRepeating(spScaredBreath.size, lastBreathIdx).also { lastBreathIdx = it }
+        val sid = spScaredBreath.getOrNull(idx) ?: 0
+        if (!playSpMono(sid, 0.84f, rate = 0.96f + stepRng.nextFloat() * 0.08f)) {
+            enqueueMono(youthCuePcm, 0.55f)
+        }
+    }
+
+    fun playDialogueCue(isGranny: Boolean) = enqueueMono(if (isGranny) grannyCuePcm else youthCuePcm, 0.72f)
 
     fun playProtagonistVoice(lineIndex: Int) {
-        val buf = if (lineIndex == 0) protagonistWakeVoice0 else protagonistWakeVoice1
-        enqueueMono(buf, 0.95f)
+        val cueId = if (lineIndex == 0) "jovem_wake_1" else "jovem_wake_2"
+        if (!playVoiceCue(cueId, isGranny = false, spatial = false)) {
+            val buf = if (lineIndex == 0) protagonistWakeVoice0 else protagonistWakeVoice1
+            enqueueMono(buf, 0.95f)
+        }
     }
 
     fun playGrannyVoice(lineIndex: Int, srcX: Float, srcZ: Float) {
-        val buf = when (lineIndex) {
-            0 -> grannyRoomVoice0
-            1 -> grannyRoomVoice1
-            else -> grannySearchMutter
+        val cueId = when (lineIndex) {
+            0 -> "vovo_wake_1"
+            1 -> "vovo_wake_2"
+            else -> "vovo_search_room"
         }
-        enqueueSpatial(buf, 1.0f, srcX, srcZ, maxDist = 24f)
+        if (!playVoiceCue(cueId, isGranny = true, srcX = srcX, srcZ = srcZ, spatial = true)) {
+            val buf = when (lineIndex) {
+                0 -> grannyRoomVoice0
+                1 -> grannyRoomVoice1
+                else -> grannySearchMutter
+            }
+            enqueueSpatial(buf, 1.0f, srcX, srcZ, maxDist = 24f)
+        }
+    }
+
+    /**
+     * Plays a real Brazilian Portuguese voice file from res/raw asynchronously on IO dispatcher
+     * with spatial stereo attenuation & ambient music ducking.
+     * Returns true if a real voice resource was scheduled, false if fallback is needed.
+     */
+    fun playVoiceCue(
+        cueId: String?,
+        isGranny: Boolean,
+        srcX: Float = listenerX,
+        srcZ: Float = listenerZ,
+        spatial: Boolean = false,
+    ): Boolean {
+        val resId = cueId?.let { resolveVoiceResId(it) }
+        val ctx = context?.applicationContext ?: context
+        if (ctx == null || resId == null || isReleased) {
+            return false
+        }
+
+        val (leftGain, rightGain) = computeVoiceStereoGains(srcX, srcZ, spatial)
+        if (leftGain <= 0.01f && rightGain <= 0.01f) return true
+
+        val gen = voiceGeneration.incrementAndGet()
+        isVoicePlaying = true
+        updateAmbientLoopVolumes()
+
+        scope.launch(Dispatchers.IO) {
+            var created: MediaPlayer? = null
+            try {
+                if (isReleased || voiceGeneration.get() != gen) return@launch
+                created = MediaPlayer.create(ctx, resId)
+                if (created == null || isReleased || voiceGeneration.get() != gen) {
+                    created?.release()
+                    return@launch
+                }
+
+                created.setVolume(leftGain, rightGain)
+                created.setOnCompletionListener { mp ->
+                    synchronized(voiceLock) {
+                        if (activeVoicePlayer === mp) {
+                            activeVoicePlayer = null
+                            isVoicePlaying = false
+                        }
+                    }
+                    try {
+                        mp.release()
+                    } catch (_: Throwable) {
+                    }
+                    updateAmbientLoopVolumes()
+                }
+                created.setOnErrorListener { mp, _, _ ->
+                    synchronized(voiceLock) {
+                        if (activeVoicePlayer === mp) {
+                            activeVoicePlayer = null
+                            isVoicePlaying = false
+                        }
+                    }
+                    try {
+                        mp.release()
+                    } catch (_: Throwable) {
+                    }
+                    updateAmbientLoopVolumes()
+                    true
+                }
+
+                synchronized(voiceLock) {
+                    if (isReleased || voiceGeneration.get() != gen) {
+                        created.release()
+                        return@launch
+                    }
+                    val prev = activeVoicePlayer
+                    activeVoicePlayer = created
+                    try {
+                        prev?.stop()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        prev?.release()
+                    } catch (_: Throwable) {
+                    }
+                    if (!isPaused) {
+                        created.start()
+                    }
+                }
+            } catch (_: Throwable) {
+                try {
+                    created?.release()
+                } catch (_: Throwable) {
+                }
+                synchronized(voiceLock) {
+                    if (activeVoicePlayer == null) {
+                        isVoicePlaying = false
+                    }
+                }
+                updateAmbientLoopVolumes()
+            }
+        }
+        return true
+    }
+
+    private fun computeVoiceStereoGains(srcX: Float, srcZ: Float, spatial: Boolean): Pair<Float, Float> {
+        val voiceGain = (masterVol * sfxVol * 1.0f).coerceIn(0f, 1.0f)
+        if (!spatial) return voiceGain to voiceGain
+
+        val dx = srcX - listenerX
+        val dz = srcZ - listenerZ
+        val dist = sqrt(dx * dx + dz * dz)
+        val atten = (1.0f / (1.0f + 0.08f * dist + 0.008f * dist * dist)).coerceIn(0.24f, 1.0f)
+        val total = (voiceGain * atten).coerceIn(0f, 1.0f)
+
+        val rightX = -cos(listenerYawRad)
+        val rightZ = sin(listenerYawRad)
+        val panDot = if (dist > 0.05f) ((dx * rightX + dz * rightZ) / dist).coerceIn(-1f, 1f) else 0f
+        val left = (total * (1f - 0.35f * panDot)).coerceIn(0f, 1f)
+        val right = (total * (1f + 0.35f * panDot)).coerceIn(0f, 1f)
+        return left to right
+    }
+
+    internal fun resolveVoiceResId(cueId: String): Int? = VOICE_RESOURCE_MAP[cueId]
+
+    private fun nextNonRepeating(size: Int, lastIdx: Int): Int {
+        if (size <= 0) return 0
+        if (size == 1) return 0
+        var candidate = stepRng.nextInt(size)
+        if (candidate == lastIdx) {
+            candidate = (candidate + 1 + stepRng.nextInt(size - 1)) % size
+        }
+        return candidate
+    }
+
+    private fun playSpMono(
+        soundId: Int,
+        gain: Float,
+        rate: Float = 1.0f,
+        jitterPitch: Boolean = false,
+    ): Boolean {
+        val sp = soundPool ?: return false
+        if (soundId == 0 || !loadedSoundIds.contains(soundId)) return false
+        val vol = (masterVol * sfxVol * gain).coerceIn(0f, 1.0f)
+        if (vol <= 0.01f) return true
+        val finalRate = if (jitterPitch) (0.94f + stepRng.nextFloat() * 0.12f) else rate.coerceIn(0.6f, 1.6f)
+        return try {
+            sp.play(soundId, vol, vol, 1, 0, finalRate) != 0
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun playSpSpatial(
+        soundId: Int,
+        gain: Float,
+        srcX: Float,
+        srcZ: Float,
+        maxDist: Float = 20f,
+        rate: Float = 1.0f,
+    ): Boolean {
+        val sp = soundPool ?: return false
+        if (soundId == 0 || !loadedSoundIds.contains(soundId)) return false
+        val dx = srcX - listenerX
+        val dz = srcZ - listenerZ
+        val dist = sqrt(dx * dx + dz * dz)
+        if (dist >= maxDist) return true
+
+        val atten = (1.0f / (1.0f + 0.14f * dist + 0.025f * dist * dist)).coerceIn(0.10f, 1.0f)
+        val totalGain = (masterVol * sfxVol * gain * atten).coerceIn(0f, 1.0f)
+        if (totalGain <= 0.01f) return true
+
+        val rightX = -cos(listenerYawRad)
+        val rightZ = sin(listenerYawRad)
+        val panDot = if (dist > 0.05f) ((dx * rightX + dz * rightZ) / dist).coerceIn(-1f, 1f) else 0f
+        val angle = (panDot + 1f) * (PI.toFloat() * 0.25f)
+        val leftGain = (cos(angle) * totalGain * 1.15f).coerceIn(0f, 1f)
+        val rightGain = (sin(angle) * totalGain * 1.15f).coerceIn(0f, 1f)
+
+        return try {
+            sp.play(soundId, leftGain, rightGain, 1, 0, rate.coerceIn(0.6f, 1.6f)) != 0
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun enqueueMono(buffer: ShortArray, gain: Float) {
@@ -422,9 +1044,119 @@ class HorrorAudioEngine {
     }
 
     fun release() {
+        isReleased = true
         ambientJob?.cancel()
         activeSounds.clear()
+        try {
+            soundPool?.release()
+        } catch (_: Throwable) {
+        }
+        soundPool = null
+        synchronized(ambientPlayersLock) {
+            listOfNotNull(ambCricketsPlayer, ambWindPlayer, ambHousePlayer).forEach { mp ->
+                try {
+                    mp.stop()
+                } catch (_: Throwable) {
+                }
+                try {
+                    mp.release()
+                } catch (_: Throwable) {
+                }
+            }
+            ambCricketsPlayer = null
+            ambWindPlayer = null
+            ambHousePlayer = null
+        }
+        synchronized(voiceLock) {
+            try {
+                activeVoicePlayer?.stop()
+            } catch (_: Throwable) {
+            }
+            try {
+                activeVoicePlayer?.release()
+            } catch (_: Throwable) {
+            }
+            activeVoicePlayer = null
+            isVoicePlaying = false
+        }
         scope.cancel()
+    }
+
+    companion object {
+        val VOICE_RESOURCE_MAP: Map<String, Int> = mapOf(
+            "vovo_greeting_1" to R.raw.voice_vovo_greeting_1,
+            "vovo_greeting_2" to R.raw.voice_vovo_greeting_2,
+            "vovo_door_slam" to R.raw.voice_vovo_door_slam,
+            "vovo_ambush" to R.raw.voice_vovo_ambush,
+            "vovo_wake_1" to R.raw.voice_vovo_wake_1,
+            "vovo_wake_2" to R.raw.voice_vovo_wake_2,
+            "vovo_search_room" to R.raw.voice_vovo_search_room,
+            "vovo_patrol_1" to R.raw.voice_vovo_patrol_1,
+            "vovo_patrol_2" to R.raw.voice_vovo_patrol_2,
+            "vovo_investigate" to R.raw.voice_vovo_investigate,
+            "vovo_found" to R.raw.voice_vovo_found,
+            "vovo_lost" to R.raw.voice_vovo_lost,
+            "vovo_pursuit" to R.raw.voice_vovo_pursuit,
+            "vovo_attack" to R.raw.voice_vovo_attack,
+            "jovem_porch" to R.raw.voice_jovem_porch,
+            "jovem_wake_1" to R.raw.voice_jovem_wake_1,
+            "jovem_wake_2" to R.raw.voice_jovem_wake_2,
+            "jovem_capture_gasp" to R.raw.voice_jovem_capture_gasp,
+            "jovem_lantern" to R.raw.voice_jovem_lantern,
+            "jovem_key" to R.raw.voice_jovem_key,
+            "jovem_item" to R.raw.voice_jovem_item,
+            "jovem_note" to R.raw.voice_jovem_note,
+            "jovem_locked" to R.raw.voice_jovem_locked,
+            "jovem_hide" to R.raw.voice_jovem_hide,
+            "jovem_hurt" to R.raw.voice_jovem_hurt,
+            "jovem_escape" to R.raw.voice_jovem_escape,
+        )
+
+        val ALL_RAW_RESOURCES: List<Pair<String, Int>> = listOf(
+            "sfx_step_wood_1" to R.raw.sfx_step_wood_1,
+            "sfx_step_wood_2" to R.raw.sfx_step_wood_2,
+            "sfx_step_wood_3" to R.raw.sfx_step_wood_3,
+            "sfx_step_wood_4" to R.raw.sfx_step_wood_4,
+            "sfx_step_dirt_1" to R.raw.sfx_step_dirt_1,
+            "sfx_step_dirt_2" to R.raw.sfx_step_dirt_2,
+            "sfx_step_dirt_3" to R.raw.sfx_step_dirt_3,
+            "sfx_step_dirt_4" to R.raw.sfx_step_dirt_4,
+            "sfx_step_tile_1" to R.raw.sfx_step_tile_1,
+            "sfx_step_tile_2" to R.raw.sfx_step_tile_2,
+            "sfx_step_tile_3" to R.raw.sfx_step_tile_3,
+            "sfx_step_tile_4" to R.raw.sfx_step_tile_4,
+            "sfx_granny_step_1" to R.raw.sfx_granny_step_1,
+            "sfx_granny_step_2" to R.raw.sfx_granny_step_2,
+            "sfx_granny_step_3" to R.raw.sfx_granny_step_3,
+            "sfx_door_open" to R.raw.sfx_door_open,
+            "sfx_door_close" to R.raw.sfx_door_close,
+            "sfx_door_slam" to R.raw.sfx_door_slam,
+            "sfx_door_creak_1" to R.raw.sfx_door_creak_1,
+            "sfx_door_creak_2" to R.raw.sfx_door_creak_2,
+            "sfx_doorknob_rattle" to R.raw.sfx_doorknob_rattle,
+            "sfx_lock_rattle" to R.raw.sfx_lock_rattle,
+            "sfx_unlock_door" to R.raw.sfx_unlock_door,
+            "sfx_wood_creak_1" to R.raw.sfx_wood_creak_1,
+            "sfx_wood_creak_2" to R.raw.sfx_wood_creak_2,
+            "amb_night_crickets" to R.raw.amb_night_crickets,
+            "amb_wind_loop" to R.raw.amb_wind_loop,
+            "amb_house_horror" to R.raw.amb_house_horror,
+            "sfx_window_wind" to R.raw.sfx_window_wind,
+            "sfx_distant_noise" to R.raw.sfx_distant_noise,
+            "sfx_distant_metal" to R.raw.sfx_distant_metal,
+            "sfx_horror_sting" to R.raw.sfx_horror_sting,
+            "sfx_ambush_surprise" to R.raw.sfx_ambush_surprise,
+            "sfx_body_thud" to R.raw.sfx_body_thud,
+            "sfx_body_drag" to R.raw.sfx_body_drag,
+            "sfx_scared_breath_1" to R.raw.sfx_scared_breath_1,
+            "sfx_scared_breath_2" to R.raw.sfx_scared_breath_2,
+            "sfx_heartbeat_real" to R.raw.sfx_heartbeat_real,
+            "sfx_pickup_key" to R.raw.sfx_pickup_key,
+            "sfx_pickup_item" to R.raw.sfx_pickup_item,
+            "sfx_paper_note" to R.raw.sfx_paper_note,
+            "sfx_flashlight_click" to R.raw.sfx_flashlight_click,
+            "sfx_wire_cut" to R.raw.sfx_wire_cut,
+        ) + VOICE_RESOURCE_MAP.entries.map { (k, v) -> "voice_$k" to v }
     }
 
     private fun synthDoorCreak(durationMult: Double = 1.0): ShortArray {
@@ -649,9 +1381,7 @@ class HorrorAudioEngine {
 
     private fun synthGrannySpeech(lineIndex: Int): ShortArray {
         val syllables = when (lineIndex) {
-            0 -> listOf(
-                0.10 to 0.22, 0.36 to 0.32, 0.86 to 0.24, 1.16 to 0.18, 1.42 to 0.34,
-            )
+            0 -> listOf(0.10 to 0.22, 0.36 to 0.32, 0.86 to 0.24, 1.16 to 0.18, 1.42 to 0.34)
             1 -> listOf(
                 0.08 to 0.22, 0.36 to 0.30, 0.72 to 0.20, 0.96 to 0.32,
                 1.48 to 0.22, 1.76 to 0.20, 2.02 to 0.24, 2.30 to 0.32,

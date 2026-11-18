@@ -197,6 +197,7 @@ private fun AuthenticatedAppRoot(
                     saveRepository = saveRepo,
                     settingsRepository = SettingsRepository(app),
                     currentUserId = currentUserId,
+                    appContext = app.applicationContext,
                 )
             }
         },
