@@ -630,6 +630,267 @@ class MeshBuilder3D {
     }
 
     /**
+     * Continuous, voluminous scalp hair cap conforming to Granny's cranium with a center-parted
+     * forehead hairline, swept temple volume, nape taper, and coiled low bun (no stacked spheres).
+     */
+    fun addSculptedGrannyHairCapAndBun(
+        rx: Float = 0.106f,
+        ry: Float = 0.130f,
+        rz: Float = 0.116f,
+        rings: Int = 20,
+        sectors: Int = 32,
+    ) {
+        val base = currentVertexCount
+        for (r in 0..rings) {
+            val v = r.toFloat() / rings // 0 = crown apex, 1 = hairline/nape edge
+            for (s in 0..sectors) {
+                val u = s.toFloat() / sectors
+                val theta = u * (2f * PI.toFloat())
+                val sinTheta = sin(theta) // +1 front (+Z), -1 back (-Z)
+                val cosTheta = cos(theta) // +1 right (+X), -1 left (-X)
+                val latAbs = abs(cosTheta)
+
+                val frontFactor = sinTheta.coerceAtLeast(0f)
+                val backFactor = (-sinTheta).coerceAtLeast(0f)
+                val centerPeak = kotlin.math.exp(-(cosTheta * cosTheta) / 0.08f) * (0.042f * PI.toFloat()) * frontFactor
+                val phiMax = (0.54f * PI.toFloat()) +
+                    backFactor * (0.20f * PI.toFloat()) -
+                    frontFactor * (0.24f * PI.toFloat()) +
+                    latAbs * (0.04f * PI.toFloat()) +
+                    centerPeak
+
+                val phi = v * phiMax
+                val sinPhi = sin(phi)
+                val cosPhi = cos(phi)
+
+                // Hair volume loft above skull, tapering smoothly at hairline edge (v -> 1)
+                val edgeTaper = 1f - v * v * v * 0.72f
+                val midLoft = sin(v * PI.toFloat()).coerceAtLeast(0f)
+                val partGroove = if (sinTheta > -0.25f) {
+                    kotlin.math.exp(-(cosTheta * cosTheta) / 0.016f) * 0.0042f * (1f - v * 0.55f)
+                } else 0f
+                val sideSwell = kotlin.math.exp(-((latAbs - 0.36f) * (latAbs - 0.36f)) / 0.06f) * 0.0048f * midLoft
+                val waveRipple = sin(theta * 18f + v * 3.2f) * 0.0022f * midLoft
+                val loft = (0.0025f + 0.0115f * midLoft + 0.0045f * (1f - v) + 0.0035f * backFactor * midLoft + sideSwell + waveRipple - partGroove) * edgeTaper
+
+                var px = sinPhi * cosTheta * (rx + loft)
+                var py = cosPhi * (ry + loft * 0.92f)
+                var pz = sinPhi * sinTheta * (rz + loft)
+
+                if (py < 0f) {
+                    val jawT = (-py / ry).coerceIn(0f, 1f)
+                    px *= (1f - 0.28f * jawT * jawT)
+                }
+                if (pz < 0f && py > -0.025f) {
+                    pz *= 1.12f
+                }
+
+                val nx = px / (rx + 0.01f)
+                val ny = py / (ry + 0.01f)
+                val nz = pz / (rz + 0.01f)
+                addVertex(px, py, pz, nx, ny, nz, u * 2.2f, v)
+            }
+        }
+        val stride = sectors + 1
+        for (r in 0 until rings) {
+            for (s in 0 until sectors) {
+                val i0 = base + r * stride + s
+                val i1 = i0 + 1
+                val i2 = i0 + stride + 1
+                val i3 = i0 + stride
+                addTriangle(i0, i1, i2)
+                addTriangle(i0, i2, i3)
+            }
+        }
+
+        // Sculpted braided/coiled bun tucked snugly against the back of the head (replaces spherical lump)
+        val bunBase = currentVertexCount
+        val bunRings = 14
+        val bunSectors = 22
+        val bunCenterY = 0.012f
+        val bunCenterZ = -0.124f
+        val tiltRad = -0.22f
+        val cosTilt = cos(tiltRad)
+        val sinTilt = sin(tiltRad)
+        for (r in 0..bunRings) {
+            val v = r.toFloat() / bunRings
+            val phi = v * (2f * PI.toFloat())
+            val cosPhi = cos(phi)
+            val sinPhi = sin(phi)
+            for (s in 0..bunSectors) {
+                val u = s.toFloat() / bunSectors
+                val theta = u * (2f * PI.toFloat())
+                val cosTheta = cos(theta)
+                val sinTheta = sin(theta)
+
+                val braidTwist = 1f + 0.14f * sin(theta * 3f + phi * 2f)
+                val majorRx = 0.044f
+                val majorRy = 0.036f
+                val tubeR = 0.024f * braidTwist
+                val lx = (majorRx + tubeR * cosPhi) * cosTheta
+                val ly = (majorRy + tubeR * cosPhi) * sinTheta
+                val lz = tubeR * sinPhi * 0.88f
+
+                // Tilt slightly to conform cleanly to lower occiput
+                val ty = ly * cosTilt - lz * sinTilt + bunCenterY
+                val tz = ly * sinTilt + lz * cosTilt + bunCenterZ
+                val nx = cosPhi * cosTheta
+                val ny = cosPhi * sinTheta * cosTilt - sinPhi * sinTilt
+                val nz = cosPhi * sinTheta * sinTilt + sinPhi * cosTilt
+                addVertex(lx, ty, tz, nx, ny, nz, u * 2f, v)
+            }
+        }
+        val bStride = bunSectors + 1
+        for (r in 0 until bunRings) {
+            for (s in 0 until bunSectors) {
+                val i0 = bunBase + r * bStride + s
+                val i1 = i0 + 1
+                val i2 = i0 + bStride + 1
+                val i3 = i0 + bStride
+                addTriangle(i0, i1, i2)
+                addTriangle(i0, i2, i3)
+            }
+        }
+        // Core dome inside coil center so the bun has zero hollow gap
+        addEllipsoid(cx = 0f, cy = bunCenterY + 0.002f, cz = bunCenterZ + 0.012f, rx = 0.044f, ry = 0.038f, rz = 0.028f, rings = 8, sectors = 12)
+    }
+
+    /**
+     * Organic, gently curved & ribbon-tapered lock of hair with multi-strand groove ripples.
+     */
+    fun addSculptedHairLock(
+        yTop: Float = 0.025f,
+        yBottom: Float = -0.155f,
+        rings: Int = 10,
+        sectors: Int = 10,
+    ) {
+        val base = currentVertexCount
+        val h = yTop - yBottom
+        for (r in 0..rings) {
+            val t = r.toFloat() / rings // 0 = bottom tip, 1 = root
+            val y = yBottom + t * h
+            val taper = sin((t * 0.88f + 0.12f) * PI.toFloat() * 0.5f)
+            val rx = 0.0045f + 0.0155f * taper
+            val rz = 0.0055f + 0.0185f * taper
+            // Gentle S-curve drape outward around cheek/temple and back toward nape
+            val swayX = sin((1f - t) * PI.toFloat()) * 0.008f
+            val swayZ = sin((1f - t) * PI.toFloat() * 1.4f) * 0.010f - (1f - t) * (1f - t) * 0.018f
+            for (s in 0..sectors) {
+                val u = s.toFloat() / sectors
+                val theta = u * (2f * PI.toFloat())
+                val ct = cos(theta)
+                val st = sin(theta)
+                val strandRib = 1f + 0.14f * sin(theta * 3f + t * 4f)
+                val x = swayX + ct * rx * strandRib
+                val z = swayZ + st * rz * strandRib
+                addVertex(x, y, z, ct, 0.12f, st, u * 1.4f, t)
+            }
+        }
+        val stride = sectors + 1
+        for (r in 0 until rings) {
+            for (s in 0 until sectors) {
+                val i0 = base + r * stride + s
+                val i1 = i0 + 1
+                val i2 = i0 + stride + 1
+                val i3 = i0 + stride
+                addTriangle(i0, i2, i1)
+                addTriangle(i0, i3, i2)
+            }
+        }
+        val topCenter = addVertex(0f, yTop, 0f, 0f, 1f, 0f, 0.5f, 1f)
+        val topRing = base + rings * stride
+        for (s in 0 until sectors) {
+            addTriangle(topCenter, topRing + s + 1, topRing + s)
+        }
+        val botCenter = addVertex(0f, yBottom, -0.018f, 0f, -1f, 0f, 0.5f, 0f)
+        for (s in 0 until sectors) {
+            addTriangle(botCenter, base + s, base + s + 1)
+        }
+    }
+
+    /**
+     * Sculpted anatomical palm for Granny with smooth wrist transition, dorsal tendon contour,
+     * slight palmar hollow, and arched metacarpal knuckle ridge.
+     */
+    fun addSculptedGrannyPalm() {
+        val profile = listOf(
+            // (y, rx, rz, zOffset)
+            Triple(0.010f, 0.027f, 0.022f),
+            Triple(-0.008f, 0.030f, 0.019f),
+            Triple(-0.032f, 0.035f, 0.016f),
+            Triple(-0.056f, 0.038f, 0.015f),
+            Triple(-0.072f, 0.036f, 0.014f),
+            Triple(-0.080f, 0.031f, 0.011f),
+        )
+        val base = currentVertexCount
+        val sectors = 16
+        for (r in profile.indices) {
+            val (y, rx, rz) = profile[r]
+            val t = r.toFloat() / (profile.size - 1)
+            for (s in 0..sectors) {
+                val u = s.toFloat() / sectors
+                val theta = u * (2f * PI.toFloat())
+                val ct = cos(theta)
+                val st = sin(theta) // +1 palm inside (+Z), -1 dorsal back (-Z)
+                // Gentle palmar cup (+Z) and bony dorsal tendons (-Z)
+                val palmCup = if (st > 0.25f && t in 0.25f..0.85f) 1f - 0.18f * st * sin(t * PI.toFloat()) else 1f
+                val tendonRidge = if (st < -0.35f && t in 0.2f..0.85f) 1f + 0.07f * sin(ct * 4f * PI.toFloat()) else 1f
+                // Slight arch across knuckle line
+                val archY = if (t > 0.65f) (1f - ct * ct) * -0.003f else 0f
+                val x = ct * rx
+                val z = st * rz * palmCup * tendonRidge
+                addVertex(x, y + archY, z, ct, 0.08f * (0.5f - t), st, u, t)
+            }
+        }
+        val stride = sectors + 1
+        for (r in 0 until profile.size - 1) {
+            for (s in 0 until sectors) {
+                val i0 = base + r * stride + s
+                val i1 = i0 + 1
+                val i2 = i0 + stride + 1
+                val i3 = i0 + stride
+                addTriangle(i0, i1, i2)
+                addTriangle(i0, i2, i3)
+            }
+        }
+        val topCenter = addVertex(0f, 0.012f, 0f, 0f, 1f, 0f, 0.5f, 0f)
+        for (s in 0 until sectors) {
+            addTriangle(topCenter, base + s, base + s + 1)
+        }
+        val botCenter = addVertex(0f, -0.082f, 0f, 0f, -1f, 0f, 0.5f, 1f)
+        val botRing = base + (profile.size - 1) * stride
+        for (s in 0 until sectors) {
+            addTriangle(botCenter, botRing + s + 1, botRing + s)
+        }
+    }
+
+    /**
+     * Sculpted phalanx segment with rounded joint caps at both ends so articulated finger bends stay seamless.
+     */
+    fun addSculptedFingerSegment(
+        length: Float,
+        rBase: Float,
+        rTip: Float,
+        sectors: Int = 10,
+    ) {
+        addTaperedLimb(
+            yBottom = -length,
+            yTop = 0f,
+            rxBottom = rTip,
+            rzBottom = rTip * 0.92f,
+            rxTop = rBase,
+            rzTop = rBase * 0.96f,
+            rings = 4,
+            sectors = sectors,
+            bulgeFactor = -0.0007f,
+            capEnds = false,
+        )
+        // Rounded proximal & distal joint caps
+        addEllipsoid(cx = 0f, cy = 0f, cz = 0f, rx = rBase * 1.02f, ry = rBase * 0.98f, rz = rBase * 0.98f, rings = 4, sectors = sectors)
+        addEllipsoid(cx = 0f, cy = -length, cz = 0f, rx = rTip * 1.02f, ry = rTip * 1.08f, rz = rTip * 0.95f, rings = 4, sectors = sectors)
+    }
+
+    /**
      * Axis-aligned box with tiled world-metric UVs so wood/wallpaper/stone textures never stretch.
      */
     fun addTexturedBox(

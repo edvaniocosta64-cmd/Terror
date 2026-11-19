@@ -221,11 +221,12 @@ object ProceduralTextures3D {
             }
 
             TextureKind.GRANNY_HAIR -> {
-                // Brittle streaked silver-white & ash-gray hair strands
-                val strand = sin(u * 68f + n1 * 5.5f) * 0.5f + 0.5f
-                val rootDark = smoothstep(0.75f, 1.0f, v) * 0.12f
-                val base = 0.48f + strand * 0.28f + n2 * 0.08f - rootDark
-                argb(base * 0.97f, base * 0.97f, base * 1.03f)
+                // Fine streaked silver-white & weathered ash-gray hair strands
+                val strand = sin(u * 112f + n1 * 6.5f) * 0.5f + 0.5f
+                val fineStrand = sin(u * 210f + v * 14f + n2 * 4f) * 0.5f + 0.5f
+                val rootDark = smoothstep(0.78f, 1.0f, v) * 0.10f
+                val base = 0.52f + strand * 0.20f + fineStrand * 0.08f + n2 * 0.06f - rootDark
+                argb(base * 0.96f, base * 0.96f, base * 1.02f)
             }
 
             TextureKind.PLAYER_JACKET -> {

@@ -35,6 +35,9 @@ enum class CharacterMeshKind {
     PALM,
     FINGER,
     DISTAL_FINGER,
+    PALM_GRANNY,
+    FINGER_GRANNY,
+    DISTAL_FINGER_GRANNY,
     SLEEVE_CUFF,
     JACKET_COLLAR,
     THIGH,
@@ -70,6 +73,9 @@ interface CharacterMeshProvider<M> {
     val palmMesh: M
     val fingerMesh: M
     val distalFinger: M
+    val palmGranny: M
+    val fingerGranny: M
+    val distalFingerGranny: M
     val sleeveCuff: M
     val jacketCollar: M
     val thighMesh: M
@@ -88,7 +94,7 @@ interface CharacterMeshProvider<M> {
  */
 class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     override val sculptedHeadGranny: MeshData = MeshBuilder3D().apply {
-        addSculptedHead(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 22, sectors = 28, gauntness = 0.68f)
+        addSculptedHead(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 40, sectors = 56, gauntness = 0.78f)
     }.build()
 
     override val jawGranny: MeshData = MeshBuilder3D().apply {
@@ -96,14 +102,11 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val hairBun: MeshData = MeshBuilder3D().apply {
-        addEllipsoid(cx = 0f, cy = 0.04f, cz = -0.108f, rx = 0.088f, ry = 0.082f, rz = 0.078f, rings = 12, sectors = 16)
-        addEllipsoid(cx = 0f, cy = 0.032f, cz = -0.01f, rx = 0.112f, ry = 0.105f, rz = 0.118f, rings = 12, sectors = 18)
-        addEllipsoid(cx = 0.082f, cy = 0.055f, cz = 0.018f, rx = 0.036f, ry = 0.042f, rz = 0.052f, rings = 8, sectors = 12)
-        addEllipsoid(cx = -0.082f, cy = 0.055f, cz = 0.018f, rx = 0.036f, ry = 0.042f, rz = 0.052f, rings = 8, sectors = 12)
+        addSculptedGrannyHairCapAndBun(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 20, sectors = 32)
     }.build()
 
     override val hairStrand: MeshData = MeshBuilder3D().apply {
-        addTaperedLimb(yBottom = -0.15f, yTop = 0.02f, rxBottom = 0.011f, rzBottom = 0.013f, rxTop = 0.030f, rzTop = 0.026f, rings = 5, sectors = 10)
+        addSculptedHairLock(yTop = 0.025f, yBottom = -0.155f, rings = 10, sectors = 10)
     }.build()
 
     override val neckMesh: MeshData = MeshBuilder3D().apply {
@@ -169,6 +172,18 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
 
     override val distalFinger: MeshData = MeshBuilder3D().apply {
         addTaperedLimb(yBottom = -0.032f, yTop = 0f, rxBottom = 0.006f, rzBottom = 0.006f, rxTop = 0.0085f, rzTop = 0.0085f, rings = 3, sectors = 8)
+    }.build()
+
+    override val palmGranny: MeshData = MeshBuilder3D().apply {
+        addSculptedGrannyPalm()
+    }.build()
+
+    override val fingerGranny: MeshData = MeshBuilder3D().apply {
+        addSculptedFingerSegment(length = 0.038f, rBase = 0.0095f, rTip = 0.0076f, sectors = 10)
+    }.build()
+
+    override val distalFingerGranny: MeshData = MeshBuilder3D().apply {
+        addSculptedFingerSegment(length = 0.034f, rBase = 0.0074f, rTip = 0.0052f, sectors = 10)
     }.build()
 
     override val sleeveCuff: MeshData = MeshBuilder3D().apply {
@@ -240,6 +255,9 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
         CharacterMeshKind.PALM -> palmMesh
         CharacterMeshKind.FINGER -> fingerMesh
         CharacterMeshKind.DISTAL_FINGER -> distalFinger
+        CharacterMeshKind.PALM_GRANNY -> palmGranny
+        CharacterMeshKind.FINGER_GRANNY -> fingerGranny
+        CharacterMeshKind.DISTAL_FINGER_GRANNY -> distalFingerGranny
         CharacterMeshKind.SLEEVE_CUFF -> sleeveCuff
         CharacterMeshKind.JACKET_COLLAR -> jacketCollar
         CharacterMeshKind.THIGH -> thighMesh
@@ -279,6 +297,9 @@ class CharacterMeshLibrary(
     override val palmMesh: GpuMesh = cpuMeshes.palmMesh.toGpuMesh()
     override val fingerMesh: GpuMesh = cpuMeshes.fingerMesh.toGpuMesh()
     override val distalFinger: GpuMesh = cpuMeshes.distalFinger.toGpuMesh()
+    override val palmGranny: GpuMesh = cpuMeshes.palmGranny.toGpuMesh()
+    override val fingerGranny: GpuMesh = cpuMeshes.fingerGranny.toGpuMesh()
+    override val distalFingerGranny: GpuMesh = cpuMeshes.distalFingerGranny.toGpuMesh()
     override val sleeveCuff: GpuMesh = cpuMeshes.sleeveCuff.toGpuMesh()
     override val jacketCollar: GpuMesh = cpuMeshes.jacketCollar.toGpuMesh()
     override val thighMesh: GpuMesh = cpuMeshes.thighMesh.toGpuMesh()
@@ -295,8 +316,8 @@ class CharacterMeshLibrary(
             sculptedHeadGranny, jawGranny, hairBun, hairStrand, neckMesh,
             torsoGranny, skirtGranny, shawlCollar, eyeball, irisPupil,
             browMesh, eyelidMesh, upperArm, forearm, jointSphere,
-            palmMesh, fingerMesh, distalFinger, sleeveCuff, jacketCollar,
-            thighMesh, shinMesh, footShoeMesh,
+            palmMesh, fingerMesh, distalFinger, palmGranny, fingerGranny, distalFingerGranny,
+            sleeveCuff, jacketCollar, thighMesh, shinMesh, footShoeMesh,
             sculptedHeadPlayer, shortHairPlayer, torsoPlayer, flashlightBody, flashlightLens,
         ).forEach { it.release() }
     }
@@ -502,17 +523,34 @@ object GrannyRigAnimator {
 
         // Sculpted Cranium & Face
         drawer.draw(stack.current(), meshes.sculptedHeadGranny, TextureKind.GRANNY_SKIN, 1f, 1f, 1f, 0.18f, 0f, false)
-        // Silver-gray Hair Bun & Side Strands
-        drawer.draw(stack.current(), meshes.hairBun, TextureKind.GRANNY_HAIR, 1f, 1f, 1f, 0.10f, 0f, false)
+        // Continuous Sculpted Hair Cap, Coiled Nape Bun, Swept Temple Locks & Delicate Forehead Wisps
+        drawer.draw(stack.current(), meshes.hairBun, TextureKind.GRANNY_HAIR, 1f, 1f, 1f, 0.14f, 0f, true)
         stack.push()
-        stack.translate(0.095f, -0.01f, 0.02f)
+        stack.translate(0.094f, 0.016f, 0.014f)
         stack.rotate(10f, 0f, 0f, 1f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.92f, 0.92f, 0.95f, 0.10f, 0f, false)
+        stack.rotate(12f, 1f, 0f, 0f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.94f, 0.94f, 0.97f, 0.14f, 0f, true)
         stack.pop()
         stack.push()
-        stack.translate(-0.095f, -0.01f, 0.02f)
+        stack.translate(-0.094f, 0.016f, 0.014f)
         stack.rotate(-10f, 0f, 0f, 1f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.92f, 0.92f, 0.95f, 0.10f, 0f, false)
+        stack.rotate(12f, 1f, 0f, 0f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.94f, 0.94f, 0.97f, 0.14f, 0f, true)
+        stack.pop()
+        // Subtle forehead/temple wisps framing the brow corners without blocking eyes
+        stack.push()
+        stack.translate(0.066f, 0.072f, 0.078f)
+        stack.rotate(24f, 0f, 0f, 1f)
+        stack.rotate(-18f, 1f, 0f, 0f)
+        stack.scale(0.42f, 0.40f, 0.45f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.90f, 0.90f, 0.94f, 0.13f, 0f, true)
+        stack.pop()
+        stack.push()
+        stack.translate(-0.070f, 0.068f, 0.074f)
+        stack.rotate(-28f, 0f, 0f, 1f)
+        stack.rotate(-16f, 1f, 0f, 0f)
+        stack.scale(0.38f, 0.36f, 0.42f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.90f, 0.90f, 0.94f, 0.13f, 0f, true)
         stack.pop()
 
         // Hinged Lower Jaw (speech & shriek!)
@@ -575,12 +613,20 @@ object GrannyRigAnimator {
             else -> 8f * (1f - huntBlend) + 12f * huntBlend
         }
 
+        val fingerCurl = when {
+            g.isDraggingCapture || dragBlend > 0.05f -> 46f
+            isHostile || g.isLoomingCapture -> 36f
+            g.aiState == GrannyAiState.GREETING_DIALOGUE -> 18f
+            else -> 26f
+        }
+
         drawArm(
             meshes = meshes,
             sideSign = 1f,
             shoulderPitch = armPitchL,
             shoulderRoll = shoulderRollMag,
             elbowFlex = elbowFlexL,
+            fingerCurl = fingerCurl,
             clothTex = TextureKind.GRANNY_DRESS,
             skinTex = TextureKind.GRANNY_SKIN,
             drawer = drawer,
@@ -591,6 +637,7 @@ object GrannyRigAnimator {
             shoulderPitch = armPitchR,
             shoulderRoll = -shoulderRollMag,
             elbowFlex = elbowFlexR,
+            fingerCurl = fingerCurl,
             clothTex = TextureKind.GRANNY_DRESS,
             skinTex = TextureKind.GRANNY_SKIN,
             drawer = drawer,
@@ -694,6 +741,7 @@ object GrannyRigAnimator {
         shoulderPitch: Float,
         shoulderRoll: Float,
         elbowFlex: Float,
+        fingerCurl: Float,
         clothTex: TextureKind,
         skinTex: TextureKind,
         drawer: RigDrawCallback<M>,
@@ -713,10 +761,14 @@ object GrannyRigAnimator {
         stack.rotate(elbowFlex, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.forearm, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
 
-        // Hand & 2-Joint Articulated Clawed Fingers
+        // Wrist Transition + Sculpted Palm + Anatomically Proportioned 5 Articulated Fingers
         stack.translate(0f, -0.25f, 0f)
-        drawer.draw(stack.current(), meshes.palmMesh, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
-        drawArticulatedFingers(meshes, sideSign, curlDeg = 28f, skinTex = skinTex, drawer = drawer)
+        stack.push()
+        stack.scale(0.58f, 0.45f, 0.46f)
+        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+        stack.pop()
+        drawer.draw(stack.current(), meshes.palmGranny, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
+        drawArticulatedFingers(meshes, sideSign, curlDeg = fingerCurl, skinTex = skinTex, drawer = drawer)
         stack.pop()
     }
 
@@ -727,27 +779,73 @@ object GrannyRigAnimator {
         skinTex: TextureKind,
         drawer: RigDrawCallback<M>,
     ) {
-        // 4 fingers with proximal + bent distal phalanges
+        // Thenar muscle mound bridging palm heel to opposable thumb root
+        stack.push()
+        stack.translate(-sideSign * 0.025f, -0.028f, 0.008f)
+        stack.rotate(-sideSign * 18f, 0f, 0f, 1f)
+        stack.scale(0.42f, 0.56f, 0.36f)
+        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.97f, 0.93f, 0.91f, 0.13f, 0f, false)
+        stack.pop()
+
+        // 4 Fingers (Index -> Middle -> Ring -> Pinky) along arched knuckle ridge
+        val xOffsets = floatArrayOf(-0.0255f, -0.0085f, 0.0090f, 0.0255f)
+        val yOrigins = floatArrayOf(-0.072f, -0.075f, -0.073f, -0.067f)
+        val zOrigins = floatArrayOf(0.003f, 0.005f, 0.003f, 0.000f)
+        val lenScales = floatArrayOf(0.96f, 1.08f, 0.98f, 0.78f)
+        val thickScales = floatArrayOf(0.94f, 0.98f, 0.90f, 0.78f)
+        val splayAngles = floatArrayOf(-4.5f, -1.0f, 2.5f, 6.5f)
+        val curlMultipliers = floatArrayOf(0.90f, 1.00f, 1.06f, 1.12f)
+
         for (i in 0 until 4) {
-            val spreadX = (i - 1.5f) * 0.017f
+            val fx = -sideSign * xOffsets[i]
+            val fy = yOrigins[i]
+            val fz = zOrigins[i]
+            val w = thickScales[i]
+            val l = lenScales[i]
+            val fingerCurl = curlDeg * curlMultipliers[i]
+
             stack.push()
-            stack.translate(spreadX, -0.072f, 0.004f)
-            stack.rotate(-curlDeg, 1f, 0f, 0f)
-            drawer.draw(stack.current(), meshes.fingerMesh, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
-            stack.translate(0f, -0.036f, 0f)
-            stack.rotate(-curlDeg * 0.85f, 1f, 0f, 0f)
-            drawer.draw(stack.current(), meshes.distalFinger, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
+            stack.translate(fx, fy, fz)
+            // MCP knuckle joint bridging palm into proximal phalanx
+            stack.push()
+            stack.scale(0.22f * w, 0.21f * w, 0.21f * w)
+            drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.95f, 0.90f, 0.88f, 0.13f, 0f, false)
+            stack.pop()
+
+            stack.rotate(-sideSign * splayAngles[i], 0f, 0f, 1f)
+            stack.rotate(-fingerCurl, 1f, 0f, 0f)
+            stack.push()
+            stack.scale(w, l, w)
+            drawer.draw(stack.current(), meshes.fingerGranny, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+            stack.pop()
+
+            stack.translate(0f, -0.038f * l, 0f)
+            stack.rotate(-fingerCurl * 0.90f, 1f, 0f, 0f)
+            stack.scale(w, l, w)
+            drawer.draw(stack.current(), meshes.distalFingerGranny, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
             stack.pop()
         }
-        // Articulated Thumb (proximal + distal tip)
+
+        // 5th Digit: Opposable Thumb (natural abduction, slight inward opposition, thicker pad)
         stack.push()
-        stack.translate(-sideSign * 0.032f, -0.035f, 0.015f)
-        stack.rotate(-sideSign * 35f, 0f, 0f, 1f)
-        stack.rotate(-curlDeg * 0.7f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.fingerMesh, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
-        stack.translate(0f, -0.034f, 0f)
-        stack.rotate(-curlDeg * 0.55f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.distalFinger, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
+        stack.translate(-sideSign * 0.033f, -0.035f, 0.013f)
+        stack.push()
+        stack.scale(0.24f, 0.24f, 0.24f)
+        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.95f, 0.90f, 0.88f, 0.13f, 0f, false)
+        stack.pop()
+
+        stack.rotate(sideSign * 20f, 0f, 1f, 0f)
+        stack.rotate(-sideSign * 36f, 0f, 0f, 1f)
+        stack.rotate(-curlDeg * 0.65f, 1f, 0f, 0f)
+        stack.push()
+        stack.scale(1.12f, 0.82f, 1.12f)
+        drawer.draw(stack.current(), meshes.fingerGranny, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+        stack.pop()
+
+        stack.translate(0f, -0.031f, 0f)
+        stack.rotate(-curlDeg * 0.58f, 1f, 0f, 0f)
+        stack.scale(1.14f, 0.78f, 1.14f)
+        drawer.draw(stack.current(), meshes.distalFingerGranny, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
         stack.pop()
     }
 }

@@ -486,7 +486,17 @@ class HorrorGameEngineTest {
         for ((kind, mesh) in charEntries) {
             assertTrue("Character part $kind must have vertices", mesh.vertexCount > 0)
             assertTrue("Character part $kind must have indices", mesh.indexCount >= 3)
+            for (idx in mesh.indices) {
+                val uIdx = idx.toInt() and 0xFFFF
+                assertTrue("Character index out of bounds in $kind: $uIdx >= ${mesh.vertexCount}", uIdx < mesh.vertexCount)
+            }
+            for (f in mesh.vertices) {
+                assertFalse("Character vertex float must not be NaN in $kind", f.isNaN())
+            }
         }
+        assertTrue("Granny sculpted head (40x56) should have >2200 vertices", charsCpu.sculptedHeadGranny.vertexCount > 2200)
+        assertTrue("Granny sculpted hair cap+bun should have >800 vertices", charsCpu.hairBun.vertexCount > 800)
+        assertTrue("Granny sculpted palm should have >100 vertices", charsCpu.palmGranny.vertexCount > 100)
 
         val engine = HorrorGameEngine(HorrorAudioEngine())
         engine.resetNewStory()
