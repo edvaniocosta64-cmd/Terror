@@ -155,4 +155,92 @@ class ExampleRobolectricTest {
         composeTestRule.onNodeWithTag("awakening_caption_text").assertIsDisplayed()
         composeTestRule.onNodeWithTag("skip_awakening_button").assertIsDisplayed()
     }
+
+    @Test
+    fun `all 69 res_raw ogg sfx ambient and pt-BR voice files resolve and load cleanly`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val entries = com.example.audio.HorrorAudioEngine.ALL_RAW_RESOURCES
+        assertEquals(69, entries.size)
+        for ((name, resId) in entries) {
+            org.junit.Assert.assertTrue("Resource ID for $name must be non-zero", resId != 0)
+            context.resources.openRawResource(resId).use { stream ->
+                val header = ByteArray(4)
+                val read = stream.read(header)
+                assertEquals("Header read failed for $name", 4, read)
+                assertEquals("Resource $name must be a valid Ogg file", "OggS", String(header, Charsets.US_ASCII))
+            }
+        }
+
+        val engine = com.example.audio.HorrorAudioEngine(context)
+        engine.updateVolumes(master = 0.85f, ambient = 0.75f, sfx = 0.90f)
+        engine.setMenuMode(false)
+        engine.setPaused(false)
+        engine.updateListener(0f, 5f, 0f)
+        for (cueId in com.example.audio.HorrorAudioEngine.VOICE_RESOURCE_MAP.keys) {
+            org.junit.Assert.assertTrue(
+                "Voice cue $cueId should resolve to a real raw resource",
+                engine.playVoiceCue(cueId, isGranny = cueId.startsWith("vovo_"), srcX = 2f, srcZ = 1f, spatial = true),
+            )
+        }
+        for (surface in com.example.audio.FootstepSurface.entries) {
+            engine.playFootstep(stealth = false, surface = surface)
+            engine.playSpatialFootstep(stealth = false, srcX = 2f, srcZ = 1f, surface = surface, isGranny = true)
+        }
+        engine.playDoorOpen()
+        engine.playDoorClose()
+        engine.playDoorCreak()
+        engine.playDoorSlam()
+        engine.playLockedRattle()
+        engine.playUnlockDoor()
+        engine.playHorrorSting()
+        engine.playAmbushSurprise()
+        engine.playBodyThud()
+        engine.playBodyDrag()
+        engine.playScaredBreath()
+        engine.playPaperNote()
+        engine.playWireCut()
+        engine.release()
+    }
+
+    @Test
+    fun `voice priority prevents low-priority overlap, stopVoice interrupts cleanly, and pause-resume-release lifecycle works`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audio = com.example.audio.HorrorAudioEngine(context)
+        audio.updateVolumes(master = 0.90f, ambient = 0.80f, sfx = 0.95f)
+        audio.setMenuMode(false)
+        audio.updateListener(0f, 0f, 0f)
+
+        // Start a DIALOGUE line
+        org.junit.Assert.assertTrue(audio.playVoiceCue("vovo_wake_1", isGranny = true))
+        org.junit.Assert.assertTrue(audio.isVoiceCurrentlyPlaying())
+        assertEquals("vovo_wake_1", audio.getActiveVoiceCueId())
+
+        // Lower-priority ambient reaction must NOT overwrite active dialogue
+        audio.playVoiceCue("jovem_item", isGranny = false, priority = com.example.audio.VoicePriority.AMBIENT_REACTION)
+        assertEquals("vovo_wake_1", audio.getActiveVoiceCueId())
+
+        // Higher-priority CUTSCENE_URGENT interrupts active dialogue cleanly
+        audio.playVoiceCue("vovo_ambush", isGranny = true, priority = com.example.audio.VoicePriority.CUTSCENE_URGENT)
+        assertEquals("vovo_ambush", audio.getActiveVoiceCueId())
+
+        // Distant spatial voice beyond max distance fades to zero and does not hijack active playback
+        val farGains = audio.computeVoiceStereoGains(srcX = 40f, srcZ = 0f, spatial = true)
+        assertEquals(0f, farGains.first, 0.001f)
+        assertEquals(0f, farGains.second, 0.001f)
+        val nearGains = audio.computeVoiceStereoGains(srcX = 2f, srcZ = 1f, spatial = true)
+        org.junit.Assert.assertTrue(nearGains.first > 0.3f && nearGains.second > 0.3f)
+
+        // Lifecycle pause -> resume -> stopVoice -> release
+        audio.setPaused(true)
+        org.junit.Assert.assertTrue(audio.isEnginePaused())
+        audio.setPaused(false)
+        org.junit.Assert.assertFalse(audio.isEnginePaused())
+
+        audio.stopVoice()
+        org.junit.Assert.assertFalse(audio.isVoiceCurrentlyPlaying())
+        assertEquals(null, audio.getActiveVoiceCueId())
+
+        audio.release()
+        org.junit.Assert.assertTrue(audio.isEngineReleased())
+    }
 }

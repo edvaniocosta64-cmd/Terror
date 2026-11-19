@@ -188,6 +188,9 @@ fun TopHorrorHud(
                             "crowbar" -> "Pé de Cabra"
                             "fuse" -> "Fusível"
                             "master_key" -> "Chave Mestra"
+                            "car_key" -> "Chave do Carro"
+                            "gas_can" -> "Gasolina"
+                            "spark_plug" -> "Vela de Ignição"
                             else -> id
                         }
                     }
@@ -600,6 +603,7 @@ fun OutcomeOverlay(
     playTimeSeconds: Int,
     onRetry: () -> Unit,
     onExitToMenu: () -> Unit,
+    escapedByCar: Boolean = false,
 ) {
     val mins = playTimeSeconds / 60
     val secs = playTimeSeconds % 60
@@ -632,10 +636,13 @@ fun OutcomeOverlay(
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = if (escaped) {
-                        "Você destrancou a porta da frente e fugiu da casa da Vovó na madrugada. Tempo: %02d:%02d".format(mins, secs)
-                    } else {
-                        "A Vovó alcançou você na escuridão... Tente ser mais silencioso ou esconda-se no armário!"
+                    text = when {
+                        escaped && escapedByCar ->
+                            "Você consertou o carro antigo nos fundos e acelerou pela madrugada longe da casa da Vovó. Tempo: %02d:%02d".format(mins, secs)
+                        escaped ->
+                            "Você destrancou a porta da frente e fugiu da casa da Vovó na madrugada. Tempo: %02d:%02d".format(mins, secs)
+                        else ->
+                            "A Vovó alcançou você na escuridão... Tente ser mais silencioso ou esconda-se no armário!"
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = BoneParchment,

@@ -34,6 +34,11 @@ enum class TextureKind {
     SOFT_SHADOW,
     LANTERN_CORE,
     ROOF_SHINGLES,
+    BATHROOM_TILE,
+    CAR_RUST_PAINT,
+    BOOKSHELF_WOOD,
+    AGED_PLASTER,
+    DUST_MOTE,
 }
 
 class TextureAtlasSet {
@@ -117,27 +122,31 @@ object ProceduralTextures3D {
             }
 
             TextureKind.WOOD_FLOOR -> {
-                // Aged floorboards (4 planks across U, long staggered seams across V)
+                // Aged floorboards (5 planks across U, staggered seams, knot grain & dust wear)
                 val plankIdx = (u * 5f).toInt()
                 val plankLocalU = (u * 5f) - plankIdx
                 val staggerV = (v + plankIdx * 0.37f) % 1f
-                val seam = if (plankLocalU < 0.035f || staggerV < 0.018f) 0.35f else 1f
-                val woodRings = sin((plankLocalU * 14f + n1 * 4.5f) * PI.toFloat()) * 0.5f + 0.5f
-                val plankTone = 0.85f + 0.25f * hash2(plankIdx + 3, 19)
-                val r = (0.28f + woodRings * 0.10f + n2 * 0.06f) * plankTone * seam
-                val g = (0.17f + woodRings * 0.06f + n2 * 0.04f) * plankTone * seam
-                val b = (0.10f + woodRings * 0.04f + n2 * 0.03f) * plankTone * seam
+                val seam = if (plankLocalU < 0.032f || staggerV < 0.016f) 0.30f else 1f
+                val knot = radialBlob(plankLocalU, staggerV, 0.52f, 0.48f, 0.16f, n1) * 0.12f
+                val woodRings = sin((plankLocalU * 16f + n1 * 4.8f) * PI.toFloat()) * 0.5f + 0.5f
+                val plankTone = 0.84f + 0.28f * hash2(plankIdx + 3, 19)
+                val grime = smoothstep(0.62f, 0.90f, n1) * 0.04f
+                val r = (0.29f + woodRings * 0.11f + n2 * 0.05f - knot - grime) * plankTone * seam
+                val g = (0.17f + woodRings * 0.06f + n2 * 0.035f - knot * 0.8f - grime) * plankTone * seam
+                val b = (0.10f + woodRings * 0.035f + n2 * 0.025f - knot * 0.6f - grime) * plankTone * seam
                 argb(r, g, b)
             }
 
             TextureKind.VICTORIAN_WALLPAPER -> {
-                // Faded damask/striped Victorian wallpaper with damp mold & peeling base
+                // Faded damask/striped Victorian wallpaper with damp mold, cracks & lower wainscoting
                 val stripe = sin(u * 12f * PI.toFloat() * 2f) * 0.5f + 0.5f
-                val mold = smoothstep(0.55f, 0.85f, fbm(u * 5f + 2f, v * 5f + 4f))
-                val wainscoting = if (v > 0.72f) 0.65f else 1.0f
-                val r = (0.28f + stripe * 0.06f - mold * 0.10f + grain * 0.3f) * wainscoting
-                val g = (0.24f + stripe * 0.05f - mold * 0.07f + grain * 0.3f) * wainscoting
-                val b = (0.19f + stripe * 0.04f - mold * 0.06f) * wainscoting
+                val damask = sin(u * 24f * PI.toFloat()) * cos(v * 18f * PI.toFloat()) * 0.025f
+                val mold = smoothstep(0.54f, 0.86f, fbm(u * 5f + 2f, v * 5f + 4f))
+                val chairRail = if (abs(v - 0.72f) < 0.022f) 0.52f else 1.0f
+                val wainscoting = if (v > 0.72f) 0.62f else 1.0f
+                val r = (0.29f + stripe * 0.055f + damask - mold * 0.11f + grain * 0.3f) * wainscoting * chairRail
+                val g = (0.24f + stripe * 0.045f + damask - mold * 0.08f + grain * 0.3f) * wainscoting * chairRail
+                val b = (0.19f + stripe * 0.035f - mold * 0.065f) * wainscoting * chairRail
                 argb(r, g, b)
             }
 
@@ -161,15 +170,16 @@ object ProceduralTextures3D {
             }
 
             TextureKind.STONE_CELLAR -> {
-                // Damp cellar stone masonry with dark mortar joints
+                // Damp cellar stone masonry with dark mortar joints & mossy moisture
                 val row = (v * 6f).toInt()
                 val offsetU = if (row % 2 == 1) 0.5f else 0f
                 val cu = (u * 4f + offsetU) % 1f
                 val cv = (v * 6f) % 1f
-                val mortar = if (cu < 0.05f || cv < 0.07f) 0.42f else 1f
-                val stoneVar = 0.80f + 0.32f * hash2((u * 4f + offsetU).toInt(), row)
-                val base = (0.20f + n1 * 0.10f + n2 * 0.05f) * stoneVar * mortar
-                argb(base * 0.95f, base * 0.98f, base * 1.06f)
+                val mortar = if (cu < 0.05f || cv < 0.07f) 0.38f else 1f
+                val stoneVar = 0.78f + 0.34f * hash2((u * 4f + offsetU).toInt(), row)
+                val damp = smoothstep(0.58f, 0.85f, fbm(u * 4f + 1.2f, v * 4f)) * 0.08f
+                val base = (0.21f + n1 * 0.10f + n2 * 0.05f - damp) * stoneVar * mortar
+                argb(base * 0.94f, base * 0.99f + damp * 0.25f, base * 1.07f)
             }
 
             TextureKind.METAL_PROP -> {
@@ -181,58 +191,68 @@ object ProceduralTextures3D {
             }
 
             TextureKind.GRANNY_SKIN -> {
-                // Pale, wrinkled, bloodless aged skin with sunken shadow lines
-                val wrinkles = sin(v * 38f + n1 * 6f) * 0.035f + sin(u * 26f + n2 * 4f) * 0.02f
-                val ageSpot = smoothstep(0.68f, 0.85f, fbm(u * 12f + 9f, v * 12f)) * 0.08f
-                val r = 0.68f + wrinkles - ageSpot + grain * 0.25f
-                val g = 0.60f + wrinkles - ageSpot * 1.1f + grain * 0.25f
-                val b = 0.54f + wrinkles - ageSpot * 1.2f + grain * 0.20f
+                // Aged, gaunt, deeply wrinkled elderly skin with fine veins, age spots, and sunken shadows
+                val fineWrinkle = sin(v * 52f + n1 * 7f) * 0.038f + sin(u * 34f + n2 * 5f) * 0.024f
+                val deepCrease = abs(sin((v * 18f + u * 5f + n1 * 2.5f) * PI.toFloat()))
+                val creaseShadow = if (deepCrease < 0.14f) -0.055f else 0f
+                val ageSpot = smoothstep(0.65f, 0.84f, fbm(u * 13f + 9f, v * 13f)) * 0.10f
+                val veinMask = smoothstep(0.76f, 0.90f, abs(sin((u * 15f + n2 * 4f) * PI.toFloat()))) * 0.035f
+                val pores = grain * 0.35f
+                val r = 0.67f + fineWrinkle + creaseShadow - ageSpot - veinMask * 0.6f + pores
+                val g = 0.58f + fineWrinkle + creaseShadow * 1.1f - ageSpot * 1.15f - veinMask * 0.2f + pores
+                val b = 0.51f + fineWrinkle + creaseShadow * 1.2f - ageSpot * 1.25f + veinMask * 0.35f + pores * 0.8f
                 argb(r, g, b)
             }
 
             TextureKind.GRANNY_DRESS -> {
-                // Tattered Victorian mourning wool + apron weave + dried blood stains
-                val weave = (sin(u * 90f) * sin(v * 90f)) * 0.025f
-                val bloodSpot1 = radialBlob(u, v, 0.45f, 0.42f, 0.16f, n1)
-                val bloodSpot2 = radialBlob(u, v, 0.58f, 0.68f, 0.20f, n2)
-                val blood = maxOf(bloodSpot1, bloodSpot2).coerceIn(0f, 1f)
-                val clothR = 0.17f + n1 * 0.05f + weave
-                val clothG = 0.15f + n1 * 0.04f + weave
-                val clothB = 0.19f + n1 * 0.05f + weave
-                val r = clothR * (1f - blood) + 0.48f * blood
+                // Textured Victorian mourning wool weave with vertical fabric fold shadows & worn stain patches
+                val weave = (sin(u * 96f) * sin(v * 96f)) * 0.026f
+                val fabricFold = sin(u * 14f * PI.toFloat() + n1 * 2.2f) * 0.038f
+                val bloodSpot1 = radialBlob(u, v, 0.45f, 0.42f, 0.15f, n1)
+                val bloodSpot2 = radialBlob(u, v, 0.58f, 0.68f, 0.19f, n2)
+                val blood = maxOf(bloodSpot1, bloodSpot2).coerceIn(0f, 1f) * 0.72f
+                val clothR = 0.18f + n1 * 0.05f + weave + fabricFold
+                val clothG = 0.15f + n1 * 0.04f + weave + fabricFold * 0.9f
+                val clothB = 0.19f + n1 * 0.05f + weave + fabricFold
+                val r = clothR * (1f - blood) + 0.44f * blood
                 val g = clothG * (1f - blood) + 0.04f * blood
                 val b = clothB * (1f - blood) + 0.05f * blood
                 argb(r, g, b)
             }
 
             TextureKind.GRANNY_HAIR -> {
-                // Streaked silver-gray brittle hair strands
-                val strand = sin(u * 55f + n1 * 5f) * 0.5f + 0.5f
-                val base = 0.46f + strand * 0.26f + n2 * 0.08f
-                argb(base * 0.96f, base * 0.97f, base * 1.02f)
+                // Brittle streaked silver-white & ash-gray hair strands
+                val strand = sin(u * 68f + n1 * 5.5f) * 0.5f + 0.5f
+                val rootDark = smoothstep(0.75f, 1.0f, v) * 0.12f
+                val base = 0.48f + strand * 0.28f + n2 * 0.08f - rootDark
+                argb(base * 0.97f, base * 0.97f, base * 1.03f)
             }
 
             TextureKind.PLAYER_JACKET -> {
-                // Dark charcoal field jacket denim/canvas weave for first-person arms & lower body
-                val weave = (sin(u * 80f) + cos(v * 80f)) * 0.02f
-                val r = 0.14f + n1 * 0.05f + weave
-                val g = 0.17f + n1 * 0.05f + weave
-                val b = 0.21f + n1 * 0.06f + weave
+                // Heavy canvas field jacket weave with stitched seams & subtle fabric creases
+                val weave = (sin(u * 88f) + cos(v * 88f)) * 0.022f
+                val seam = if (abs(u - 0.50f) < 0.02f || abs(v - 0.58f) < 0.015f) -0.05f else 0f
+                val crease = sin(u * 10f * PI.toFloat() + n1 * 3f) * 0.025f
+                val r = 0.15f + n1 * 0.05f + weave + seam + crease
+                val g = 0.18f + n1 * 0.05f + weave + seam + crease
+                val b = 0.22f + n1 * 0.06f + weave + seam + crease
                 argb(r, g, b)
             }
 
             TextureKind.PLAYER_SKIN -> {
-                // Warm natural human skin for player hands, face & forearms
-                val r = 0.78f + n1 * 0.05f + grain * 0.2f
-                val g = 0.60f + n1 * 0.04f + grain * 0.2f
-                val b = 0.48f + n1 * 0.03f + grain * 0.15f
+                // Natural warm skin with subtle pore micro-texture & knuckle/palm tone variation
+                val micro = (n2 - 0.5f) * 0.04f + grain * 0.25f
+                val warmth = sin(v * 10f + n1 * 3f) * 0.018f
+                val r = 0.77f + n1 * 0.05f + micro + warmth
+                val g = 0.59f + n1 * 0.04f + micro + warmth * 0.5f
+                val b = 0.47f + n1 * 0.03f + micro
                 argb(r, g, b)
             }
 
             TextureKind.PLAYER_HAIR -> {
                 // Dark chestnut brown hair strands for protagonist
-                val strand = sin(u * 60f + n1 * 4f) * 0.5f + 0.5f
-                val base = 0.09f + strand * 0.08f + n2 * 0.04f
+                val strand = sin(u * 66f + n1 * 4f) * 0.5f + 0.5f
+                val base = 0.09f + strand * 0.09f + n2 * 0.04f
                 argb(base * 1.15f, base * 0.85f, base * 0.65f)
             }
 
@@ -267,9 +287,9 @@ object ProceduralTextures3D {
                 // Dark aged mahogany/oak furniture & staircase grain with subtle varnish sheen
                 val grainRings = sin((u * 9f + n1 * 3.8f) * PI.toFloat()) * 0.5f + 0.5f
                 val bevel = if (u < 0.06f || u > 0.94f || v < 0.06f || v > 0.94f) 0.74f else 1f
-                val r = (0.21f + grainRings * 0.09f + n2 * 0.04f) * bevel
-                val g = (0.12f + grainRings * 0.05f + n2 * 0.03f) * bevel
-                val b = (0.07f + grainRings * 0.03f + n2 * 0.02f) * bevel
+                val r = (0.22f + grainRings * 0.09f + n2 * 0.04f) * bevel
+                val g = (0.125f + grainRings * 0.05f + n2 * 0.03f) * bevel
+                val b = (0.072f + grainRings * 0.03f + n2 * 0.02f) * bevel
                 argb(r, g, b)
             }
 
@@ -329,6 +349,72 @@ object ProceduralTextures3D {
                 val edge = if (localV > 0.88f || cu < 0.04f) 0.48f else 1f
                 val tone = 0.85f + 0.25f * n1
                 argb(0.15f * tone * edge, 0.12f * tone * edge, 0.13f * tone * edge)
+            }
+
+            TextureKind.BATHROOM_TILE -> {
+                // Aged cracked ceramic tiles with stained mortar & damp mildew
+                val tx = (u * 6f).toInt()
+                val ty = (v * 6f).toInt()
+                val lu = (u * 6f) - tx
+                val lv = (v * 6f) - ty
+                val grout = if (lu < 0.06f || lv < 0.06f) 0.46f else 1f
+                val tileTint = 0.88f + 0.14f * hash2(tx + 7, ty + 13)
+                val grime = smoothstep(0.58f, 0.88f, fbm(u * 6f + 3f, v * 6f)) * 0.14f
+                val base = (0.48f + n2 * 0.06f - grime) * tileTint * grout
+                argb(base * 0.86f, base * 0.96f, base * 0.94f)
+            }
+
+            TextureKind.CAR_RUST_PAINT -> {
+                // Weathered vintage dark slate-blue sedan paint with subtle oxidation & metallic flecks
+                val rust = smoothstep(0.62f, 0.86f, fbm(u * 7f + 4f, v * 7f + 2f))
+                val scratch = smoothstep(0.78f, 0.94f, n2) * 0.06f
+                val baseR = 0.13f + scratch + rust * 0.24f
+                val baseG = 0.16f + scratch + rust * 0.10f
+                val baseB = 0.21f + scratch - rust * 0.06f
+                argb(baseR, baseG, baseB)
+            }
+
+            TextureKind.BOOKSHELF_WOOD -> {
+                // Rich mahogany library shelf packed with colorful aged leather book spines
+                val shelfRow = (v * 4f).toInt()
+                val localV = (v * 4f) - shelfRow
+                if (localV > 0.86f || u < 0.06f || u > 0.94f) {
+                    argb(0.18f + n1 * 0.04f, 0.10f + n1 * 0.03f, 0.06f)
+                } else {
+                    val bookIdx = (u * 14f).toInt()
+                    val bookLocalU = (u * 14f) - bookIdx
+                    val bookH = 0.16f + 0.14f * hash2(bookIdx, shelfRow * 3 + 1)
+                    if (localV < bookH) {
+                        argb(0.05f, 0.04f, 0.03f)
+                    } else {
+                        val gap = if (bookLocalU < 0.09f) 0.55f else 1f
+                        val spineColor = hash2(bookIdx + 11, shelfRow + 5)
+                        val goldBand = if (abs(localV - 0.35f) < 0.035f || abs(localV - 0.72f) < 0.035f) 1.35f else 1f
+                        val br = (0.14f + spineColor * 0.24f) * gap * goldBand
+                        val bg = (0.10f + (1f - spineColor) * 0.14f) * gap * goldBand
+                        val bb = (0.08f + ((bookIdx % 3) * 0.05f)) * gap
+                        argb(br, bg, bb)
+                    }
+                }
+            }
+
+            TextureKind.AGED_PLASTER -> {
+                // Cracked attic & timber-beam plaster with water stains and soot
+                val stain = smoothstep(0.50f, 0.85f, fbm(u * 4f + 5f, v * 4f + 1.5f)) * 0.13f
+                val crack = if (abs(sin(u * 9f + n1 * 5f)) < 0.035f && n2 > 0.45f) 0.55f else 1f
+                val r = (0.34f + n2 * 0.06f - stain + grain * 0.35f) * crack
+                val g = (0.30f + n2 * 0.05f - stain + grain * 0.35f) * crack
+                val b = (0.25f + n2 * 0.04f - stain * 0.8f) * crack
+                argb(r, g, b)
+            }
+
+            TextureKind.DUST_MOTE -> {
+                // Soft warm floating dust speck alpha particle
+                val dx = u - 0.5f
+                val dy = v - 0.5f
+                val d = sqrt(dx * dx + dy * dy) * 2f
+                val alpha = (1f - smoothstep(0.10f, 0.92f, d)).coerceIn(0f, 1f)
+                argb(0.95f, 0.88f, 0.74f, alpha * alpha * 0.65f)
             }
         }
     }

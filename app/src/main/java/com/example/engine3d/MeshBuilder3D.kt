@@ -279,15 +279,16 @@ class MeshBuilder3D {
     }
 
     /**
-     * Sculpted human head mesh with organic cranium, brow ridge, cheekbones,
-     * nose bridge protrusion, sunken eye sockets, and tapered chin/jawline.
+     * Sculpted human head mesh with organic cranium, brow ridge, glabella furrow,
+     * sunken eye sockets, sculpted nasal bridge + nostrils, cheekbones, nasolabial folds,
+     * parted lips, tapered chin/jawline, and side ears.
      */
     fun addSculptedHead(
         rx: Float = 0.108f,
         ry: Float = 0.132f,
         rz: Float = 0.118f,
-        rings: Int = 18,
-        sectors: Int = 24,
+        rings: Int = 22,
+        sectors: Int = 28,
         gauntness: Float = 0.25f,
     ) {
         val base = currentVertexCount
@@ -313,59 +314,97 @@ class MeshBuilder3D {
                     val jawT = (-py / ry).coerceIn(0f, 1f)
                     px *= (1f - 0.34f * jawT * jawT)
                     if (pz > 0f) {
-                        pz *= (1f - 0.16f * jawT)
+                        pz *= (1f - 0.15f * jawT)
                     }
                 }
-                // Elongate back of cranium slightly
-                if (pz < 0f && py > -0.02f) {
-                    pz *= 1.10f
+                // Elongate back of cranium & subtle occipital curve
+                if (pz < 0f && py > -0.025f) {
+                    pz *= 1.12f
                 }
 
                 // Front facial sculpting (+Z side)
-                if (sinTheta > 0.15f) {
-                    val frontWeight = ((sinTheta - 0.15f) / 0.85f).coerceIn(0f, 1f)
-                    val latAbs = kotlin.math.abs(cosTheta)
+                if (sinTheta > 0.12f) {
+                    val frontWeight = ((sinTheta - 0.12f) / 0.88f).coerceIn(0f, 1f)
+                    val latAbs = abs(cosTheta)
 
                     // Eye socket hollows around y = +0.015..+0.045, x = +-0.036
                     val eyeDx = (latAbs - 0.34f) / 0.22f
                     val eyeDy = (cosPhi - 0.18f) / 0.20f
                     val eyeDistSq = eyeDx * eyeDx + eyeDy * eyeDy
                     if (eyeDistSq < 1f) {
-                        val hollow = (1f - eyeDistSq) * (0.014f + 0.006f * gauntness)
+                        val hollow = (1f - eyeDistSq) * (0.015f + 0.007f * gauntness)
                         pz -= hollow * frontWeight
                     }
 
-                    // Brow ridge right above sockets (cosPhi ~ 0.40)
+                    // Brow ridge + angry glabella crease between brows
                     val browDy = (cosPhi - 0.42f) / 0.14f
-                    if (browDy * browDy < 1f && latAbs < 0.65f) {
-                        val browBump = (1f - browDy * browDy) * 0.010f
+                    if (browDy * browDy < 1f && latAbs < 0.68f) {
+                        val browBump = (1f - browDy * browDy) * (0.011f + 0.004f * gauntness)
                         pz += browBump * frontWeight
                     }
+                    if (latAbs < 0.14f && browDy * browDy < 1f) {
+                        pz -= (1f - latAbs / 0.14f) * 0.005f * gauntness * frontWeight
+                    }
 
-                    // Nose bridge & tip (center latAbs < 0.22, cosPhi -0.18..+0.28)
-                    val noseLat = (latAbs / 0.20f)
+                    // Nose bridge, tip & flared nostrils (alae)
+                    val noseLat = (latAbs / 0.19f)
                     val noseVert = ((cosPhi - 0.02f) / 0.26f)
                     if (noseLat < 1f && noseVert > -1f && noseVert < 1f) {
                         val nProfile = (1f - noseLat * noseLat) * (1f - noseVert * noseVert)
-                        val tipBoost = if (cosPhi < 0.05f) 1.35f else 0.75f
-                        pz += nProfile * 0.028f * tipBoost * frontWeight
+                        val tipBoost = if (cosPhi < 0.04f) 1.42f else 0.78f
+                        pz += nProfile * 0.030f * tipBoost * frontWeight
+                    }
+                    // Nostrils flare around cosPhi ~ -0.14, latAbs ~ 0.13..0.24
+                    val alaeDx = (latAbs - 0.16f) / 0.09f
+                    val alaeDy = (cosPhi + 0.13f) / 0.08f
+                    if (alaeDx * alaeDx + alaeDy * alaeDy < 1f) {
+                        val alaeBump = (1f - (alaeDx * alaeDx + alaeDy * alaeDy)) * 0.008f
+                        pz += alaeBump * frontWeight
                     }
 
-                    // Cheekbones (gaunt horror hollow below cheeks)
+                    // Cheekbones + sunken gaunt cheeks & deep nasolabial folds for elderly realism
                     val cheekDx = (latAbs - 0.48f) / 0.24f
-                    val cheekDy = (cosPhi + 0.14f) / 0.18f
+                    val cheekDy = (cosPhi + 0.12f) / 0.17f
                     if (cheekDx * cheekDx + cheekDy * cheekDy < 1f) {
-                        pz += (1f - (cheekDx * cheekDx + cheekDy * cheekDy)) * 0.011f * frontWeight
+                        pz += (1f - (cheekDx * cheekDx + cheekDy * cheekDy)) * (0.012f + 0.004f * gauntness) * frontWeight
                     }
-                    val hollowCheekDy = (cosPhi + 0.34f) / 0.16f
+                    val hollowCheekDy = (cosPhi + 0.34f) / 0.18f
                     if (cheekDx * cheekDx + hollowCheekDy * hollowCheekDy < 1f) {
-                        px *= (1f - 0.14f * gauntness * (1f - hollowCheekDy * hollowCheekDy))
+                        val cHollow = (1f - hollowCheekDy * hollowCheekDy) * (1f - (cheekDx * cheekDx))
+                        px *= (1f - 0.17f * gauntness * cHollow)
+                        pz -= 0.006f * gauntness * cHollow * frontWeight
+                    }
+
+                    // Nasolabial fold crease running diagonally from nose wings to mouth corners
+                    if (cosPhi in -0.52f..-0.12f) {
+                        val expectedLat = 0.16f + ((-0.12f - cosPhi) / 0.40f) * 0.14f
+                        val foldDist = abs(latAbs - expectedLat) / 0.065f
+                        if (foldDist < 1f) {
+                            pz -= (1f - foldDist * foldDist) * (0.003f + 0.005f * gauntness) * frontWeight
+                        }
+                    }
+
+                    // Upper & lower lips + parted mouth line at cosPhi ~ -0.39
+                    if (latAbs < 0.28f) {
+                        val lipArch = 1f - (latAbs / 0.28f) * (latAbs / 0.28f)
+                        val upperLipDy = (cosPhi + 0.34f) / 0.055f
+                        val lowerLipDy = (cosPhi + 0.44f) / 0.055f
+                        val mouthSlitDy = (cosPhi + 0.39f) / 0.032f
+                        if (upperLipDy * upperLipDy < 1f) {
+                            pz += (1f - upperLipDy * upperLipDy) * 0.007f * lipArch * frontWeight
+                        }
+                        if (lowerLipDy * lowerLipDy < 1f) {
+                            pz += (1f - lowerLipDy * lowerLipDy) * 0.006f * lipArch * frontWeight
+                        }
+                        if (mouthSlitDy * mouthSlitDy < 1f) {
+                            pz -= (1f - mouthSlitDy * mouthSlitDy) * 0.006f * lipArch * frontWeight
+                        }
                     }
 
                     // Chin prominence
                     val chinDy = (cosPhi + 0.72f) / 0.18f
                     if (chinDy * chinDy < 1f && latAbs < 0.35f) {
-                        pz += (1f - chinDy * chinDy) * 0.010f * frontWeight
+                        pz += (1f - chinDy * chinDy) * 0.011f * frontWeight
                     }
                 }
 
@@ -387,6 +426,20 @@ class MeshBuilder3D {
                 addTriangle(i0, i1, i2)
                 addTriangle(i0, i2, i3)
             }
+        }
+
+        // Add subtle sculpted left & right ears along the head sides
+        for (side in listOf(-1f, 1f)) {
+            addEllipsoid(
+                cx = side * (rx * 0.96f),
+                cy = 0.002f,
+                cz = -0.008f,
+                rx = 0.013f,
+                ry = 0.030f,
+                rz = 0.019f,
+                rings = 6,
+                sectors = 10,
+            )
         }
     }
 
@@ -439,13 +492,11 @@ class MeshBuilder3D {
         }
 
         if (capEnds) {
-            // Top cap
             val topCenter = addVertex(0f, yTop, 0f, 0f, 1f, 0f, 0.5f, 0.5f)
             val topRingStart = base + rings * stride
             for (s in 0 until sectors) {
                 addTriangle(topCenter, topRingStart + s + 1, topRingStart + s)
             }
-            // Bottom cap
             val botCenter = addVertex(0f, yBottom, 0f, 0f, -1f, 0f, 0.5f, 0.5f)
             for (s in 0 until sectors) {
                 addTriangle(botCenter, base + s, base + s + 1)
@@ -454,7 +505,7 @@ class MeshBuilder3D {
     }
 
     /**
-     * Sculpted human torso/ribcage/waist profile from pelvis (yBottom) to shoulders (yTop).
+     * Sculpted human torso/ribcage/waist profile from pelvis (yBottom) to shoulders/clavicles (yTop).
      */
     fun addSculptedTorso(
         yBottom: Float = 0f,
@@ -468,18 +519,20 @@ class MeshBuilder3D {
         shoulderRx: Float = 0.195f,
         shoulderRz: Float = 0.105f,
         hunchCurveZ: Float = 0.025f,
-        sectors: Int = 18,
+        sectors: Int = 20,
     ) {
         val profile = listOf(
             Triple(0.00f, hipRx, hipRz),
-            Triple(0.22f, waistRx, waistRz),
-            Triple(0.55f, chestRx, chestRz),
-            Triple(0.84f, shoulderRx, shoulderRz),
-            Triple(1.00f, shoulderRx * 0.42f, shoulderRz * 0.55f),
+            Triple(0.18f, waistRx, waistRz),
+            Triple(0.46f, chestRx * 0.94f, chestRz * 0.96f),
+            Triple(0.68f, chestRx, chestRz),
+            Triple(0.86f, shoulderRx, shoulderRz),
+            Triple(0.95f, shoulderRx * 0.65f, shoulderRz * 0.72f),
+            Triple(1.00f, shoulderRx * 0.36f, shoulderRz * 0.52f),
         )
         val base = currentVertexCount
         val h = yTop - yBottom
-        for ((ri, spec) in profile.withIndex()) {
+        for (spec in profile) {
             val t = spec.first
             val rx = spec.second
             val rz = spec.third
@@ -490,7 +543,10 @@ class MeshBuilder3D {
                 val theta = u * (2f * PI.toFloat())
                 val ct = cos(theta)
                 val st = sin(theta)
-                addVertex(ct * rx, y, st * rz + zOff, ct, 0.12f * t, st, u, t)
+                // Subtle chest / spine anatomical shaping
+                val frontFold = if (st > 0.3f && t in 0.25f..0.85f) 1.04f else 1.0f
+                val spineGroove = if (st < -0.75f && abs(ct) < 0.22f) 0.92f else 1.0f
+                addVertex(ct * rx, y, st * rz * frontFold * spineGroove + zOff, ct, 0.14f * t, st, u, t)
             }
         }
         val stride = sectors + 1
@@ -516,7 +572,7 @@ class MeshBuilder3D {
     }
 
     /**
-     * Multi-ring ruffled Victorian tattered dress/skirt hanging from waist (yTop) down to hem (yBottom).
+     * Multi-ring ruffled Victorian tattered dress/skirt with rich cloth pleats hanging from waist (yTop) to hem (yBottom).
      */
     fun addFlaredSkirt(
         yBottom: Float = -0.64f,
@@ -525,8 +581,8 @@ class MeshBuilder3D {
         topRz: Float = 0.120f,
         botRx: Float = 0.30f,
         botRz: Float = 0.27f,
-        rings: Int = 7,
-        sectors: Int = 24,
+        rings: Int = 9,
+        sectors: Int = 28,
     ) {
         val base = currentVertexCount
         val h = yTop - yBottom
@@ -534,14 +590,14 @@ class MeshBuilder3D {
             val t = r.toFloat() / rings // 0 = hem, 1 = waist
             val yBase = yBottom + t * h
             val flare = (1f - t)
-            val rx = topRx + (botRx - topRx) * flare * flare.coerceAtLeast(0.45f)
-            val rz = topRz + (botRz - topRz) * flare * flare.coerceAtLeast(0.45f)
+            val rx = topRx + (botRx - topRx) * flare * flare.coerceAtLeast(0.42f)
+            val rz = topRz + (botRz - topRz) * flare * flare.coerceAtLeast(0.42f)
             for (s in 0..sectors) {
                 val u = s.toFloat() / sectors
                 val theta = u * (2f * PI.toFloat())
-                // Pleat folds & ragged hemline
-                val fold = 1f + flare * 0.085f * sin(theta * 7f)
-                val tatter = if (r == 0) sin(theta * 9f) * 0.028f else 0f
+                // Organic multi-frequency fabric pleats & ragged hemline
+                val fold = 1f + flare * (0.09f * sin(theta * 7f) + 0.04f * cos(theta * 13f))
+                val tatter = if (r == 0) (sin(theta * 9f) * 0.028f + cos(theta * 15f) * 0.012f) else 0f
                 val x = cos(theta) * rx * fold
                 val z = sin(theta) * rz * fold
                 addVertex(x, yBase + tatter, z, cos(theta), 0.18f, sin(theta), u * 1.5f, 1f - t)
@@ -558,6 +614,19 @@ class MeshBuilder3D {
                 addTriangle(i0, i3, i2)
             }
         }
+    }
+
+    /**
+     * Modeled anatomical boot/shoe with distinct heel block, contoured vamp/toe box, and ankle cuff.
+     */
+    fun addModeledBoot() {
+        // Sole & heel block
+        addTexturedBox(-0.046f, -0.060f, -0.055f, 0.046f, -0.036f, 0.155f, uvTileMeters = 0.25f)
+        addTexturedBox(-0.044f, -0.068f, -0.055f, 0.044f, -0.054f, 0.025f, uvTileMeters = 0.25f)
+        // Contoured vamp & toe box
+        addEllipsoid(cx = 0f, cy = -0.018f, cz = 0.058f, rx = 0.046f, ry = 0.030f, rz = 0.098f, rings = 8, sectors = 14)
+        // Ankle boot cuff
+        addTaperedLimb(yBottom = -0.035f, yTop = 0.045f, rxBottom = 0.045f, rzBottom = 0.048f, rxTop = 0.042f, rzTop = 0.045f, rings = 4, sectors = 12)
     }
 
     /**

@@ -300,6 +300,7 @@ private fun AuthenticatedAppRoot(
             },
             onExitToMenu = {
                 openedFromGame.value = false
+                viewModel.audioEngine.stopVoice()
                 viewModel.audioEngine.setMenuMode(true)
                 viewModel.audioEngine.setPaused(false)
                 viewModel.audioEngine.startAmbient()

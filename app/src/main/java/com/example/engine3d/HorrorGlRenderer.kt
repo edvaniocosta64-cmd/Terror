@@ -275,11 +275,11 @@ class HorrorGlRenderer(
         }
 
         val lightScale = if (inCapture) cap.interiorLightScale else 1.0f
-        uploadNearestPointLights(camX, camZ, lightScale)
+        uploadNearestPointLights(camX, camY, camZ, lightScale)
 
         val tier = performanceManager.activeTier
 
-        // 1. Static Opaque World Architecture (Road, Forest, House, Furniture, Glowing Windows)
+        // 1. Static Opaque World Architecture (Road, Forest, House, Furniture, Glowing Windows, Car)
         Matrix.setIdentityM(modelMatrix, 0)
         for (batch in staticBatches) {
             if (batch.transparent) continue
@@ -297,39 +297,64 @@ class HorrorGlRenderer(
             )
         }
 
-        // 2. Dynamic Paneled Doors with Brass Doorknobs
+        // 2. Dynamic Paneled Doors (Ground & Upper Floors + Secret Bookshelf Door)
         val props = propMeshes
         if (props != null) {
             for (door in gameEngine.doors) {
                 val yawDeg = door.def.closedYawDeg + door.currentAngleDeg
-                // Door panel anchored at hinge X=0..1 scaled to door dimensions
                 Matrix.setIdentityM(modelMatrix, 0)
-                Matrix.translateM(modelMatrix, 0, door.def.hingeX, door.def.height * 0.5f, door.def.hingeZ)
+                Matrix.translateM(modelMatrix, 0, door.def.hingeX, door.def.baseY + door.def.height * 0.5f, door.def.hingeZ)
                 Matrix.rotateM(modelMatrix, 0, -yawDeg, 0f, 1f, 0f)
                 Matrix.scaleM(modelMatrix, 0, door.def.width, door.def.height, door.def.thickness)
+                val panelTex = if (door.def.isSecretBookshelf) TextureKind.BOOKSHELF_WOOD else TextureKind.WOOD_FLOOR
                 drawMeshWithMatrix(
-                    modelMatrix, props.doorPanelMesh, TextureKind.WOOD_FLOOR,
-                    0.88f, 0.78f, 0.70f, specular = 0.18f, emissive = 0f, alphaScale = 1f, doubleSided = false,
+                    modelMatrix, props.doorPanelMesh, panelTex,
+                    if (door.def.isSecretBookshelf) 0.95f else 0.88f,
+                    if (door.def.isSecretBookshelf) 0.90f else 0.78f,
+                    if (door.def.isSecretBookshelf) 0.85f else 0.70f,
+                    specular = if (door.def.isSecretBookshelf) 0.12f else 0.18f,
+                    emissive = 0f, alphaScale = 1f, doubleSided = false,
                 )
 
-                // Brass doorknob near outer latch edge (animates when Granny turns the bedroom handle!)
-                Matrix.setIdentityM(modelMatrix, 0)
-                Matrix.translateM(modelMatrix, 0, door.def.hingeX, 1.08f, door.def.hingeZ)
-                Matrix.rotateM(modelMatrix, 0, -yawDeg, 0f, 1f, 0f)
-                Matrix.translateM(modelMatrix, 0, door.def.width - 0.14f, 0f, 0f)
-                if (door.def.id == "door_granny_room" && kotlin.math.abs(gameEngine.doorKnobTurnDeg) > 0.1f) {
-                    Matrix.rotateM(modelMatrix, 0, gameEngine.doorKnobTurnDeg, 0f, 0f, 1f)
+                if (!door.def.isSecretBookshelf) {
+                    Matrix.setIdentityM(modelMatrix, 0)
+                    Matrix.translateM(modelMatrix, 0, door.def.hingeX, door.def.baseY + 1.08f, door.def.hingeZ)
+                    Matrix.rotateM(modelMatrix, 0, -yawDeg, 0f, 1f, 0f)
+                    Matrix.translateM(modelMatrix, 0, door.def.width - 0.14f, 0f, 0f)
+                    if (door.def.id == "door_granny_room" && kotlin.math.abs(gameEngine.doorKnobTurnDeg) > 0.1f) {
+                        Matrix.rotateM(modelMatrix, 0, gameEngine.doorKnobTurnDeg, 0f, 0f, 1f)
+                    }
+                    drawMeshWithMatrix(
+                        modelMatrix, props.doorKnobMesh, TextureKind.METAL_PROP,
+                        1.0f, 0.82f, 0.38f, specular = 0.85f, emissive = 0f, alphaScale = 1f, doubleSided = false,
+                    )
                 }
-                drawMeshWithMatrix(
-                    modelMatrix, props.doorKnobMesh, TextureKind.METAL_PROP,
-                    1.0f, 0.82f, 0.38f, specular = 0.85f, emissive = 0f, alphaScale = 1f, doubleSided = false,
-                )
             }
 
-            // 3. Detailed 3D World Collectibles & Notes
+            // 3. Detailed 3D World Collectibles, Notes & Secret Crimson Tome Lever
             for (item in WorldMap3D.itemDefs) {
                 if (item.kind == InteractKind.ITEM && gameEngine.collectedItems.contains(item.id)) continue
-                if (item.kind == InteractKind.HIDE_CLOSET || item.kind == InteractKind.HIDE_BED || item.kind == InteractKind.FUSE_BOX) continue
+                if (item.kind == InteractKind.HIDE_CLOSET ||
+                    item.kind == InteractKind.HIDE_BED ||
+                    item.kind == InteractKind.FUSE_BOX ||
+                    item.kind == InteractKind.DRAWER ||
+                    item.kind == InteractKind.ESCAPE_CAR
+                ) continue
+
+                if (item.kind == InteractKind.SECRET_LEVER) {
+                    val secretUnlocked = gameEngine.doors.firstOrNull { it.def.id == "secret_bookshelf_door" }?.isUnlocked == true
+                    Matrix.setIdentityM(modelMatrix, 0)
+                    Matrix.translateM(modelMatrix, 0, item.x, item.y, item.z)
+                    Matrix.rotateM(modelMatrix, 0, 90f, 0f, 0f, 1f)
+                    Matrix.rotateM(modelMatrix, 0, if (secretUnlocked) -36f else -14f, 1f, 0f, 0f)
+                    drawMeshWithMatrix(
+                        modelMatrix, props.noteMesh, TextureKind.BED_FABRIC,
+                        item.r * 1.25f, item.g * 1.1f, item.b * 1.1f,
+                        specular = 0.25f, emissive = 0.18f, alphaScale = 1f, doubleSided = false,
+                    )
+                    continue
+                }
+
                 val bob = sin(elapsedSec * 2.3f + item.x) * 0.025f
                 Matrix.setIdentityM(modelMatrix, 0)
                 Matrix.translateM(modelMatrix, 0, item.x, item.y + bob, item.z)
@@ -337,9 +362,11 @@ class HorrorGlRenderer(
 
                 val itemMesh = when (item.id) {
                     "lantern" -> props.flashlightPickupMesh
-                    "key_study", "master_key" -> props.keyMesh
+                    "key_study", "master_key", "car_key" -> props.keyMesh
                     "medkit" -> props.medkitMesh
                     "crowbar" -> props.crowbarMesh
+                    "gas_can" -> props.gasCanMesh
+                    "spark_plug" -> props.sparkPlugMesh
                     else -> if (item.kind == InteractKind.NOTE) props.noteMesh else props.genericToolMesh
                 }
                 val itemTex = if (item.kind == InteractKind.NOTE) TextureKind.VICTORIAN_WALLPAPER else TextureKind.METAL_PROP
@@ -374,10 +401,11 @@ class HorrorGlRenderer(
             )
         }
 
-        // Dynamic Ground Contact Shadow beneath Granny & Player
+        // Dynamic Ground Contact Shadow beneath Granny & Player (floor-aware for upstairs!)
         if (props != null && tier.enableShadows) {
+            val grannyFloorY = WorldMap3D.floorHeightAt(gameEngine.granny.x, gameEngine.granny.z)
             Matrix.setIdentityM(modelMatrix, 0)
-            Matrix.translateM(modelMatrix, 0, gameEngine.granny.x, 0.01f, gameEngine.granny.z)
+            Matrix.translateM(modelMatrix, 0, gameEngine.granny.x, grannyFloorY + 0.01f, gameEngine.granny.z)
             Matrix.scaleM(modelMatrix, 0, 1.05f, 1f, 1.05f)
             drawMeshWithMatrix(
                 modelMatrix, props.shadowDecalMesh, TextureKind.SOFT_SHADOW,
@@ -457,14 +485,23 @@ class HorrorGlRenderer(
                     moveSpeedNorm = awake.moveSpeedNorm,
                 )
             } else if (!inCapture && !inAwakening) {
+                val playerFloorY = WorldMap3D.floorHeightAt(gameEngine.playerX, gameEngine.playerZ)
+                val solidAhead = WorldMap3D.rayDistToSolidAhead(
+                    camX = camX,
+                    camZ = camZ,
+                    yawRad = gameEngine.playerYawRad,
+                    doors = gameEngine.doors,
+                    entityFloorY = playerFloorY,
+                )
+                val armTuckFrac = ((0.58f - solidAhead) / 0.42f).coerceIn(0f, 1f)
                 PlayerRigAnimator.drawPlayerLowerBody(gameEngine, chars, meshDrawCallback)
-                PlayerRigAnimator.drawFirstPersonArms(gameEngine, chars, camX, camY, camZ, meshDrawCallback)
+                PlayerRigAnimator.drawFirstPersonArms(gameEngine, chars, camX, camY, camZ, meshDrawCallback, armTuckFrac = armTuckFrac)
             }
         }
 
-        // 6. Volumetric-Style Layered Mist & Lantern Halos (Transparent Pass)
+        // 6. Volumetric-Style Layered Mist, Floating Dust Motes & Lantern Halos
         if (props != null && tier.volumetricFogLayers > 0) {
-            drawVolumetricFogLayers(props, camX, camZ, tier.volumetricFogLayers)
+            drawVolumetricFogLayers(props, camX, camY, camZ, tier)
         }
 
         // Clean up GL state
@@ -475,16 +512,18 @@ class HorrorGlRenderer(
     private fun drawVolumetricFogLayers(
         props: PropMeshLibrary,
         camX: Float,
+        camY: Float,
         camZ: Float,
-        layerCount: Int,
+        tier: QualityTier,
     ) {
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         GLES20.glDepthMask(false)
 
         val yawDeg = gameEngine.playerYawRad * (180f / PI.toFloat())
+        val layerCount = tier.volumetricFogLayers
 
-        // Ambient drifting mist billboards along the road & house grounds
+        // Ambient drifting mist billboards along the road & carport yard
         for (i in 0 until layerCount) {
             val seed = i * 1.37f
             val driftX = sin(elapsedSec * 0.22f + seed) * 2.2f + ((i % 5) - 2) * 1.85f
@@ -502,9 +541,7 @@ class HorrorGlRenderer(
             )
         }
 
-        // Warm light-shaft halo billboards under the Porch Lantern & Streetlamp
-        if (camZ > 6.0f) {
-            // Porch warm volumetric lantern cone
+        if (camZ > 6.0f && camX < 14.0f) {
             Matrix.setIdentityM(modelMatrix, 0)
             Matrix.translateM(modelMatrix, 0, 0f, 1.85f, 10.65f)
             Matrix.rotateM(modelMatrix, 0, yawDeg, 0f, 1f, 0f)
@@ -514,7 +551,6 @@ class HorrorGlRenderer(
                 1.0f, 0.66f, 0.28f, specular = 0f, emissive = 0.85f, alphaScale = 0.22f, doubleSided = true,
             )
 
-            // Roadside cold streetlamp mist halo
             Matrix.setIdentityM(modelMatrix, 0)
             Matrix.translateM(modelMatrix, 0, -2.36f, 2.65f, 22.0f)
             Matrix.rotateM(modelMatrix, 0, yawDeg, 0f, 1f, 0f)
@@ -523,16 +559,43 @@ class HorrorGlRenderer(
                 modelMatrix, props.fogPlaneMesh, TextureKind.FOG_PUFF,
                 0.62f, 0.76f, 1.0f, specular = 0f, emissive = 0.75f, alphaScale = 0.18f, doubleSided = true,
             )
-        } else {
-            // Inside house eerie dust haze near foyer/cam
+        } else if (camX > 13.0f && camZ < 10.5f) {
+            // Carport warm amber floodlight mist halo around Getaway Sedan
             Matrix.setIdentityM(modelMatrix, 0)
-            Matrix.translateM(modelMatrix, 0, camX + sin(elapsedSec * 0.4f) * 1.4f, 1.3f, camZ - 3.2f)
+            Matrix.translateM(modelMatrix, 0, 19.5f, 2.25f, 5.8f)
+            Matrix.rotateM(modelMatrix, 0, yawDeg, 0f, 1f, 0f)
+            Matrix.scaleM(modelMatrix, 0, 2.8f, 2.2f, 1f)
+            drawMeshWithMatrix(
+                modelMatrix, props.fogPlaneMesh, TextureKind.FOG_PUFF,
+                0.96f, 0.68f, 0.36f, specular = 0f, emissive = 0.72f, alphaScale = 0.20f, doubleSided = true,
+            )
+        } else {
+            // Inside house eerie dust haze & floating indoor dust motes
+            Matrix.setIdentityM(modelMatrix, 0)
+            Matrix.translateM(modelMatrix, 0, camX + sin(elapsedSec * 0.4f) * 1.4f, camY - 0.15f, camZ - 3.2f)
             Matrix.rotateM(modelMatrix, 0, yawDeg, 0f, 1f, 0f)
             Matrix.scaleM(modelMatrix, 0, 3.4f, 1.9f, 1f)
             drawMeshWithMatrix(
                 modelMatrix, props.fogPlaneMesh, TextureKind.FOG_PUFF,
                 0.55f, 0.52f, 0.58f, specular = 0f, emissive = 0.10f, alphaScale = 0.14f, doubleSided = true,
             )
+
+            if (tier.enableParticles) {
+                for (m in 0 until 7) {
+                    val mx = camX + sin(elapsedSec * 0.45f + m * 2.1f) * 2.4f
+                    val my = (camY - 0.35f) + ((m * 0.27f + elapsedSec * 0.08f) % 1.35f)
+                    val mz = camZ + cos(elapsedSec * 0.38f + m * 1.7f) * 2.4f
+                    val sz = 0.16f + (m % 3) * 0.05f
+                    Matrix.setIdentityM(modelMatrix, 0)
+                    Matrix.translateM(modelMatrix, 0, mx, my, mz)
+                    Matrix.rotateM(modelMatrix, 0, yawDeg, 0f, 1f, 0f)
+                    Matrix.scaleM(modelMatrix, 0, sz, sz, 1f)
+                    drawMeshWithMatrix(
+                        modelMatrix, props.fogPlaneMesh, TextureKind.DUST_MOTE,
+                        0.92f, 0.88f, 0.78f, specular = 0f, emissive = 0.35f, alphaScale = 0.45f, doubleSided = true,
+                    )
+                }
+            }
         }
 
         GLES20.glDepthMask(true)
@@ -582,12 +645,13 @@ class HorrorGlRenderer(
         GLES20.glDrawElements(GLES20.GL_TRIANGLES, mesh.indexCount, GLES20.GL_UNSIGNED_SHORT, 0)
     }
 
-    private fun uploadNearestPointLights(camX: Float, camZ: Float, lightScale: Float) {
+    private fun uploadNearestPointLights(camX: Float, camY: Float, camZ: Float, lightScale: Float) {
         val maxLights = (performanceManager.activeTier.maxDynamicLights + 2).coerceIn(2, 6)
         val sorted = WorldMap3D.pointLights.sortedBy { l ->
             val dx = l.x - camX
+            val dy = l.y - camY
             val dz = l.z - camZ
-            dx * dx + dz * dz
+            dx * dx + dy * dy * 2.2f + dz * dz
         }
         val count = minOf(maxLights, sorted.size)
         for (i in 0 until 6) {
@@ -700,16 +764,21 @@ class HorrorGlRenderer(
                 if (outAlpha < 0.02) discard;
 
                 vec3 baseColor = texSample.rgb * uTintColor;
-                vec3 N = normalize(vNormal);
+                vec3 rawN = normalize(vNormal);
+                // Procedural micro-detail normal perturbation for plaster, skin & wood relief
+                float g1 = sin(vTexCoord.x * 58.0 + vWorldPos.z * 7.0);
+                float g2 = cos(vTexCoord.y * 58.0 + vWorldPos.x * 7.0);
+                vec3 N = normalize(rawN + vec3(g1 * 0.035, 0.0, g2 * 0.035));
                 vec3 toCam = uCamPos - vWorldPos;
                 float camDist = length(toCam);
                 vec3 V = toCam / max(camDist, 0.001);
 
-                // Cold night moonlight directional + configurable horror indoor/outdoor ambient
+                // Vertical hemisphere bounce ambient + cold moonlight directional
+                vec3 hemiAmbient = mix(vec3(0.052, 0.046, 0.056), uAmbientColor, N.y * 0.5 + 0.5);
                 vec3 moonDir = normalize(vec3(-0.32, 0.85, 0.42));
                 float moonDiff = max(dot(N, moonDir), 0.0);
                 float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-                vec3 lit = baseColor * (uAmbientColor + vec3(0.09, 0.11, 0.16) * moonDiff);
+                vec3 lit = baseColor * (hemiAmbient + vec3(0.09, 0.11, 0.16) * moonDiff);
                 lit += vec3(0.035, 0.045, 0.075) * fresnel;
 
                 // Dynamic flickering & antique warm point lights

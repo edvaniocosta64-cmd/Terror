@@ -353,6 +353,7 @@ fun GameScreen(
                     gameEngine.isPaused = false
                     onExitToMenu()
                 },
+                escapedByCar = hud.escapedByCar,
             )
         }
     }

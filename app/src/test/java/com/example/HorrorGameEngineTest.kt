@@ -523,4 +523,246 @@ class HorrorGameEngineTest {
         )
         assertTrue("Full protagonist rig should emit > 25 submesh draws, was $playerDrawCalls", playerDrawCalls > 25)
     }
+
+    @Test
+    fun `surface detection and pt-BR dialogue voiceCueId mapping match map regions and story beats`() {
+        val engine = HorrorGameEngine(HorrorAudioEngine())
+        engine.resetNewStory()
+
+        assertEquals(com.example.audio.FootstepSurface.DIRT, engine.surfaceAt(0f, 22f))
+        assertEquals(com.example.audio.FootstepSurface.WOOD, engine.surfaceAt(0f, 5.5f))
+        assertEquals(com.example.audio.FootstepSurface.TILE_STONE, engine.surfaceAt(6.0f, 6.0f))
+        assertEquals(com.example.audio.FootstepSurface.TILE_STONE, engine.surfaceAt(0f, -12.0f))
+
+        // Trigger porch dialogue -> verify real pt-BR voiceCueId is populated
+        engine.skipCinematicIntro()
+        engine.playerX = 0f
+        engine.playerZ = 13.0f
+        engine.step(0.05f)
+        val snap = engine.hudSnapshot()
+        assertEquals("vovo_greeting_1", snap.activeDialogue?.voiceCueId)
+    }
+
+    @Test
+    fun `audio voice cues and dialogue queues synchronize with capture and awakening states without leaks`() {
+        val audio = HorrorAudioEngine()
+        val engine = HorrorGameEngine(audio)
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+
+        engine.playerZ = 13.2f
+        engine.step(0.016f)
+        engine.playerZ = 8.4f
+        repeat(30) { engine.step(0.05f) }
+        assertEquals(com.example.engine3d.CaptureStage.AMBUSH_TURN, engine.captureState.stage)
+        assertEquals("vovo_ambush", engine.hudSnapshot().activeDialogue?.voiceCueId)
+
+        // Skipping capture stops stale capture dialogue immediately and starts awakening clean
+        engine.skipCaptureCutscene()
+        assertEquals(null, engine.hudSnapshot().activeDialogue)
+        assertEquals(com.example.engine3d.AwakeningStage.WAKE_LYING, engine.awakeningState.stage)
+
+        // Resetting clears voice & story cleanly
+        engine.resetNewStory()
+        assertFalse(audio.isVoiceCurrentlyPlaying())
+        assertEquals(StoryPhase.INTRO_ROAD, engine.storyPhase)
+    }
+
+    @Test
+    fun `secret bookshelf lever unlocks passage and expands BFS navigation to cellar`() {
+        val engine = HorrorGameEngine(HorrorAudioEngine())
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+        engine.playerZ = 13.2f
+        engine.step(0.016f)
+        engine.playerZ = 8.4f
+        engine.step(0.016f)
+        engine.skipCaptureCutscene()
+        engine.skipAwakeningCutscene()
+        engine.interactWithTarget() // exit bed
+
+        val secretDoor = engine.doors.first { it.def.id == "secret_bookshelf_door" }
+        assertFalse(secretDoor.isUnlocked)
+
+        // Move into Study near hidden book lever (-14.85, 1.32, -6.2) facing -X/-Z
+        engine.playerX = -13.9f
+        engine.playerZ = -6.0f
+        engine.playerYawRad = -Math.PI.toFloat() * 0.55f
+        val leverPrompt = engine.findBestInteraction()
+        assertEquals("lever_study", leverPrompt?.targetId)
+
+        engine.interactWithTarget()
+        assertTrue(secretDoor.isUnlocked)
+        assertTrue(secretDoor.isOpen)
+
+        // Verify BFS path from Study to Cellar Vault traverses unlocked secret_bookshelf_door even if door_cellar is locked
+        val path = com.example.engine3d.WorldMap3D.findNavPath(
+            startX = -5.5f,
+            startY = 0f,
+            startZ = -2.5f,
+            targetX = -6.5f,
+            targetY = 0f,
+            targetZ = -18.5f,
+            doors = engine.doors,
+        )
+        assertTrue("Path should traverse cellar_secret node", path.any { it.id == "cellar_secret" })
+        assertEquals("cellar_vault", path.last().id)
+    }
+
+    @Test
+    fun `attic vertical isolation, battery_attic recharge, drawers, and upper-floor save restore work cleanly`() {
+        val engine = HorrorGameEngine(HorrorAudioEngine())
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+        engine.playerZ = 13.2f
+        engine.step(0.016f)
+        engine.playerZ = 8.4f
+        engine.step(0.016f)
+        engine.skipCaptureCutscene()
+        engine.skipAwakeningCutscene()
+        engine.interactWithTarget()
+
+        // Drawer looting in Living Room grants +15% battery once
+        engine.battery = 40f
+        engine.playerX = -13.4f
+        engine.playerZ = 7.9f
+        engine.playerYawRad = 0f // +Z toward drawer_living at (-13.6, 8.8)
+        assertEquals("drawer_living", engine.findBestInteraction()?.targetId)
+        engine.interactWithTarget()
+        assertEquals(55f, engine.battery, 0.5f)
+        assertTrue(engine.openedDrawers.contains("drawer_living"))
+
+        // Stand inside Attic at X=9.8, Z=-18.8 (floorY = 2.04 -> eye ~ 3.69)
+        engine.playerX = 9.8f
+        engine.playerZ = -18.8f
+        engine.isCrouching = false
+        repeat(20) { engine.step(0.05f) }
+        assertTrue("Player eye height in Attic should be > 3.4f, was ${engine.playerY}", engine.playerY > 3.4f)
+
+        // Look toward battery_attic (9.8, 2.76, -19.8) -> picked up & recharges battery, NOT left in inventory
+        engine.playerYawRad = Math.PI.toFloat() // -Z
+        assertEquals("battery_attic", engine.findBestInteraction()?.targetId)
+        engine.interactWithTarget()
+        assertEquals(100f, engine.battery, 0.5f)
+        assertFalse(engine.inventoryItems.contains("battery_attic"))
+
+        // Vertical isolation: standing directly above ground-floor items/doors must NOT target ground-floor doors
+        engine.playerX = 8.9f
+        engine.playerZ = -16.8f
+        engine.playerYawRad = 0f // +Z toward door_attic at (8.40..9.85, -16.0, baseY=2.04)
+        val prompt = engine.findBestInteraction()
+        assertEquals("door_attic", prompt?.targetId)
+
+        // Save & restore upstairs preserves playerY > 3.4f and openedDrawers
+        val saved = engine.toGameSave("uid_2", "slot_2", "Slot 2")
+        val restored = HorrorGameEngine(HorrorAudioEngine())
+        restored.restoreFromSave(saved)
+        assertTrue("Restored Attic playerY should remain > 3.4f, was ${restored.playerY}", restored.playerY > 3.4f)
+        assertTrue(restored.openedDrawers.contains("drawer_living"))
+    }
+
+    @Test
+    fun `car escape route installs parts, persists via GameSave, and completes game via Car`() {
+        val engine = HorrorGameEngine(HorrorAudioEngine())
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+        engine.playerZ = 13.2f
+        engine.step(0.016f)
+        engine.playerZ = 8.4f
+        engine.step(0.016f)
+        engine.skipCaptureCutscene()
+        engine.skipAwakeningCutscene()
+        engine.interactWithTarget()
+
+        // Install gas_can and spark_plug first (missing car_key)
+        engine.inventoryItems.addAll(listOf("gas_can", "spark_plug"))
+        engine.playerX = 18.4f
+        engine.playerZ = 2.6f
+        engine.playerYawRad = (Math.PI / 2.0).toFloat() // facing +X toward escape_car (20.6, 2.6)
+        assertEquals("escape_car", engine.findBestInteraction()?.targetId)
+        engine.interactWithTarget()
+        assertTrue(engine.carGasInstalled)
+        assertTrue(engine.carPlugInstalled)
+        assertFalse(engine.carKeyInstalled)
+        assertFalse(engine.isEscaped)
+
+        // Save & restore partial car progress
+        val saved = engine.toGameSave("uid_3", "slot_3", "Slot 3")
+        val restored = HorrorGameEngine(HorrorAudioEngine())
+        restored.restoreFromSave(saved)
+        assertTrue(restored.carGasInstalled)
+        assertTrue(restored.carPlugInstalled)
+        assertFalse(restored.carKeyInstalled)
+
+        // Add car_key and start the car -> escapedByCar victory!
+        restored.inventoryItems.add("car_key")
+        restored.interactWithTarget()
+        assertTrue(restored.carKeyInstalled)
+        assertTrue(restored.isEscaped)
+        assertTrue(restored.escapedByCar)
+        assertTrue(restored.hudSnapshot().escapedByCar)
+        assertEquals(StoryPhase.ESCAPED, restored.storyPhase)
+    }
+
+    @Test
+    fun `granny opens unlocked interior doors along BFS path and rayDistToSolidAhead detects close walls`() {
+        val engine = HorrorGameEngine(HorrorAudioEngine())
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+        engine.playerZ = 13.2f
+        engine.step(0.016f)
+        engine.playerZ = 8.4f
+        engine.step(0.016f)
+        engine.skipCaptureCutscene()
+        engine.skipAwakeningCutscene()
+        engine.interactWithTarget()
+
+        // Place Granny next to closed unlocked door_kitchen_bedroom (5.20, 2.0) chasing player in kitchen
+        val kitchenDoor = engine.doors.first { it.def.id == "door_kitchen_bedroom" }
+        kitchenDoor.isOpen = false
+        kitchenDoor.isUnlocked = true
+        engine.granny.x = 5.9f
+        engine.granny.y = 0f
+        engine.granny.z = 0.8f
+        engine.granny.aiState = GrannyAiState.HUNTING_PLAYER
+
+        var openedDoorId: String? = null
+        var maxReachBlend = 0f
+        repeat(20) {
+            engine.granny.update(
+                dt = 0.05f,
+                playerX = 7.5f,
+                playerZ = 5.5f,
+                playerHidden = false,
+                playerNoiseRadius = 5f,
+                flashlightOn = false,
+                doors = engine.doors,
+                onTriggerDialogueHint = { _, _ -> },
+                onAttackPlayer = {},
+                playerY = 0f,
+                onOpenDoor = { d -> openedDoorId = d.def.id },
+            )
+            maxReachBlend = maxOf(maxReachBlend, engine.granny.doorReachArmBlend)
+        }
+        assertEquals("door_kitchen_bedroom", openedDoorId)
+        assertTrue(kitchenDoor.isOpen)
+        assertTrue("Door reach arm blend should trigger", maxReachBlend > 0.5f)
+
+        // Verify forward raycast detects nearby wall when standing right in front of South exterior wall (Z=10)
+        val distClose = com.example.engine3d.WorldMap3D.rayDistToSolidAhead(
+            camX = -5.0f,
+            camZ = 9.55f,
+            yawRad = 0f,
+            doors = engine.doors,
+            entityFloorY = 0f,
+        )
+        assertTrue("Expected short wall distance (< 0.45f), got $distClose", distClose < 0.45f)
+
+        // Verify all static CPU batches respect 16-bit index vertex ceiling
+        val batches = com.example.engine3d.SceneBuilder3D.buildStaticCpuBatches()
+        for (b in batches) {
+            assertTrue("Batch ${b.texture} exceeded 65535 vertices (${b.meshData.vertexCount})", b.meshData.vertexCount <= 65535)
+        }
+    }
 }
+

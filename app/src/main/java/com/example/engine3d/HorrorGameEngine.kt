@@ -1,11 +1,13 @@
 package com.example.engine3d
 
+import com.example.audio.FootstepSurface
 import com.example.audio.HorrorAudioEngine
 import com.example.data.GameSave
 import com.example.data.StoryPhase
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -15,6 +17,7 @@ data class DialogueLine(
     val isGranny: Boolean,
     val expression: GrannyExpression = GrannyExpression.GENTLE_SMILE,
     val durationSec: Float = 4.5f,
+    val voiceCueId: String? = null,
 )
 
 data class InteractionPrompt(
@@ -133,6 +136,7 @@ data class GameHudSnapshot(
     val frontPadlockOpened: Boolean = false,
     val isCaught: Boolean = false,
     val isEscaped: Boolean = false,
+    val escapedByCar: Boolean = false,
     val playTimeSeconds: Int = 0,
     val statusToast: String? = null,
 )
@@ -164,6 +168,7 @@ class HorrorGameEngine(
     val collectedItems: MutableSet<String> = mutableSetOf()
     val inventoryItems: MutableList<String> = mutableListOf()
     val readNotes: MutableSet<String> = mutableSetOf()
+    val openedDrawers: MutableSet<String> = mutableSetOf()
     val granny: GrannyState = GrannyState()
 
     // Cinematic / Narrative / Feedback timers
@@ -225,12 +230,19 @@ class HorrorGameEngine(
     private var hideStepAccum: Float = 0f
     private var grannySearchStepAccum: Float = 0f
     private var houseAmbientTimer: Float = 4.5f
+    private var grannyLastStepBeat: Int = 0
+    private var lastVoiceReactionAtSec: Float = -10f
 
     @Volatile var isPaused: Boolean = false
     var isCaught: Boolean = false
     var isEscaped: Boolean = false
+    var carGasInstalled: Boolean = false
+    var carPlugInstalled: Boolean = false
+    var carKeyInstalled: Boolean = false
+    var escapedByCar: Boolean = false
 
     fun resetNewStory() {
+        audioEngine.stopVoice()
         playerX = 0.0f
         playerY = WorldMap3D.PLAYER_EYE_STANDING
         playerZ = 27.5f
@@ -253,8 +265,10 @@ class HorrorGameEngine(
         collectedItems.clear()
         inventoryItems.clear()
         readNotes.clear()
+        openedDrawers.clear()
 
         granny.x = 0.0f
+        granny.y = 0.0f
         granny.z = 9.3f
         granny.yawDeg = 0f
         granny.aiState = GrannyAiState.WAITING_AT_DOOR
@@ -267,6 +281,7 @@ class HorrorGameEngine(
         granny.searchBendDeg = 0f
         granny.dragPullPhase = 0f
         granny.dragGripBlend = 0f
+        granny.resetNavigationState()
 
         isCinematicIntro = true
         cinematicTimer = 0f
@@ -302,12 +317,18 @@ class HorrorGameEngine(
         hideStepAccum = 0f
         grannySearchStepAccum = 0f
         houseAmbientTimer = 4.5f
+        grannyLastStepBeat = 0
+        lastVoiceReactionAtSec = -10f
 
         activeNoteTitle = null
         activeNoteBody = null
         toastText = null
         isCaught = false
         isEscaped = false
+        carGasInstalled = false
+        carPlugInstalled = false
+        carKeyInstalled = false
+        escapedByCar = false
         isPaused = false
 
         playerWalkCycle = 0f
@@ -323,7 +344,7 @@ class HorrorGameEngine(
         isCinematicIntro = false
         storyPhase = save.resolvedPhase
         playerX = save.playerX.toFloat()
-        playerY = save.playerY.toFloat().coerceIn(0.8f, 2.0f)
+        playerY = save.playerY.toFloat().coerceIn(0.8f, 4.5f)
         playerZ = save.playerZ.toFloat()
         playerYawRad = save.playerYaw.toFloat()
         health = save.health.toInt().coerceIn(1, 100)
@@ -339,8 +360,20 @@ class HorrorGameEngine(
         for (door in doors) {
             if (save.unlockedDoors.contains(door.def.id)) {
                 door.isUnlocked = true
+                if (door.def.isSecretBookshelf) {
+                    door.isOpen = true
+                    door.currentAngleDeg = door.def.openDeltaDeg
+                }
             }
         }
+        for (entry in save.unlockedDoors) {
+            if (entry.startsWith("opened_drawer_")) {
+                openedDrawers.add(entry.removePrefix("opened_drawer_"))
+            }
+        }
+        carGasInstalled = save.unlockedDoors.contains("car_gas_installed")
+        carPlugInstalled = save.unlockedDoors.contains("car_plug_installed")
+        carKeyInstalled = save.unlockedDoors.contains("car_key_installed")
         if (frontDoor != null) {
             frontDoor.frontWireCut = save.unlockedDoors.contains("front_wire_cut")
             frontDoor.frontFuseInserted = save.unlockedDoors.contains("front_fuse_inserted")
@@ -358,6 +391,8 @@ class HorrorGameEngine(
             }
             granny.x = 5.5f
             granny.z = 5.5f
+            granny.resetNavigationState()
+            granny.y = WorldMap3D.floorHeightAt(granny.x, granny.z)
             granny.aiState = if (storyPhase == StoryPhase.GRANNYS_PURSUIT) {
                 GrannyAiState.HUNTING_PLAYER
             } else {
@@ -373,6 +408,12 @@ class HorrorGameEngine(
         if (front?.frontWireCut == true) unlockedIds.add("front_wire_cut")
         if (front?.frontFuseInserted == true) unlockedIds.add("front_fuse_inserted")
         if (front?.frontPadlockOpened == true) unlockedIds.add("front_padlock_opened")
+        for (drawerId in openedDrawers) {
+            unlockedIds.add("opened_drawer_$drawerId")
+        }
+        if (carGasInstalled) unlockedIds.add("car_gas_installed")
+        if (carPlugInstalled) unlockedIds.add("car_plug_installed")
+        if (carKeyInstalled) unlockedIds.add("car_key_installed")
         return GameSave(
             id = slotId,
             userId = userId,
@@ -405,11 +446,13 @@ class HorrorGameEngine(
 
     fun skipCaptureCutscene() {
         if (captureState.stage == CaptureStage.NONE) return
+        audioEngine.stopVoice()
         finishCaptureCutscene()
     }
 
     fun skipAwakeningCutscene() {
         if (awakeningState.stage == AwakeningStage.NONE) return
+        audioEngine.stopVoice()
         finishAwakeningSequence()
     }
 
@@ -490,7 +533,7 @@ class HorrorGameEngine(
         if (currentDialogue == null) return
         currentDialogue = dialogueQueue.removeFirstOrNull()
         dialogueTimer = 0f
-        currentDialogue?.let { audioEngine.playDialogueCue(it.isGranny) }
+        currentDialogue?.let { playDialogueAudio(it) }
     }
 
     fun dismissNote() {
@@ -531,7 +574,8 @@ class HorrorGameEngine(
                 readNotes.add(item.id)
                 activeNoteTitle = item.name
                 activeNoteBody = item.noteBody
-                audioEngine.playPickupKey()
+                audioEngine.playPaperNote()
+                playOptionalReaction("jovem_note")
                 if (item.id == "note_study" && storyPhase != StoryPhase.GRANNYS_PURSUIT) {
                     triggerGrannyPursuitReveal()
                 }
@@ -541,6 +585,8 @@ class HorrorGameEngine(
                 isHidingUnderBed = false
                 flashlightOn = false
                 audioEngine.playDoorCreak()
+                audioEngine.playScaredBreath()
+                playOptionalReaction("jovem_hide")
                 showToast("Escondido no armário. A Vovó não pode vê-lo aqui.")
             }
             InteractKind.HIDE_BED -> {
@@ -558,6 +604,8 @@ class HorrorGameEngine(
                     playerYawRad = spot.lookOutYawRad
                     playerPitchRad = 0.04f
                     audioEngine.playWoodCreak()
+                    audioEngine.playScaredBreath()
+                    playOptionalReaction("jovem_hide")
                     showToast("Escondido debaixo da cama. Toque em Agachar ou Interagir para sair.")
                 }
             }
@@ -568,11 +616,71 @@ class HorrorGameEngine(
                 } else if (inventoryItems.contains("fuse")) {
                     front.frontFuseInserted = true
                     inventoryItems.remove("fuse")
-                    audioEngine.playPickupKey()
+                    audioEngine.playUnlockDoor()
                     showToast("Fusível encaixado! Trava elétrica liberada.")
                 } else {
                     audioEngine.playLockedRattle()
                     showToast("Falta o Fusível Elétrico para ligar a trava.")
+                }
+            }
+            InteractKind.DRAWER -> {
+                if (openedDrawers.add(item.id)) {
+                    battery = (battery + 15f).coerceAtMost(100f)
+                    audioEngine.playWoodCreak()
+                    showToast("Você vasculhou ${item.name} e achou uma carga (+15% bateria)!")
+                } else {
+                    showToast("Esta gaveta já está vazia.")
+                }
+            }
+            InteractKind.SECRET_LEVER -> {
+                val secretDoor = doors.firstOrNull { it.def.id == "secret_bookshelf_door" }
+                if (secretDoor != null && !secretDoor.isUnlocked) {
+                    secretDoor.isUnlocked = true
+                    secretDoor.isOpen = true
+                    audioEngine.playUnlockDoor()
+                    audioEngine.playDoorCreak()
+                    playOptionalReaction("jovem_item")
+                    showToast("Você puxou o livro oculto! Uma passagem secreta se abriu.")
+                } else {
+                    showToast("A passagem secreta atrás da estante já foi liberada.")
+                }
+            }
+            InteractKind.ESCAPE_CAR -> {
+                var installedNow = false
+                if (!carGasInstalled && inventoryItems.remove("gas_can")) {
+                    carGasInstalled = true
+                    installedNow = true
+                    audioEngine.playPickupItem()
+                }
+                if (!carPlugInstalled && inventoryItems.remove("spark_plug")) {
+                    carPlugInstalled = true
+                    installedNow = true
+                    audioEngine.playUnlockDoor()
+                }
+                if (!carKeyInstalled && inventoryItems.remove("car_key")) {
+                    carKeyInstalled = true
+                    installedNow = true
+                    audioEngine.playPickupKey()
+                }
+                if (carGasInstalled && carPlugInstalled && carKeyInstalled) {
+                    isEscaped = true
+                    escapedByCar = true
+                    storyPhase = StoryPhase.ESCAPED
+                    audioEngine.playUnlockDoor()
+                    audioEngine.playDoorOpen()
+                    playOptionalReaction("jovem_escape")
+                    showToast("O carro pegou! Você fugiu pela estrada dos fundos!")
+                } else {
+                    val missing = buildList {
+                        if (!carGasInstalled) add("Gasolina")
+                        if (!carPlugInstalled) add("Vela de Ignição")
+                        if (!carKeyInstalled) add("Chave do Carro")
+                    }
+                    if (!installedNow) {
+                        audioEngine.playLockedRattle()
+                    }
+                    val prefix = if (installedNow) "Peça instalada no carro! " else ""
+                    showToast("${prefix}Falta para ligar: ${missing.joinToString(", ")}.")
                 }
             }
             InteractKind.DOOR -> Unit
@@ -588,16 +696,18 @@ class HorrorGameEngine(
             if (!door.frontWireCut) {
                 if (inventoryItems.contains("wire_cutters")) {
                     door.frontWireCut = true
-                    audioEngine.playFlashlightClick()
+                    audioEngine.playWireCut()
                     showToast("Fio do alarme cortado!")
                 } else {
                     audioEngine.playLockedRattle()
+                    playOptionalReaction("jovem_locked")
                     showToast("Um cabo de alarme bloqueia a porta. Precisa de um Alicate!")
                     return
                 }
             }
             if (!door.frontFuseInserted) {
                 audioEngine.playLockedRattle()
+                playOptionalReaction("jovem_locked")
                 showToast("Trava elétrica sem energia! Coloque o Fusível na caixa ao lado.")
                 return
             }
@@ -606,16 +716,19 @@ class HorrorGameEngine(
                     door.frontPadlockOpened = true
                     door.isUnlocked = true
                     door.isOpen = true
-                    audioEngine.playDoorCreak()
+                    audioEngine.playUnlockDoor()
+                    audioEngine.playDoorOpen()
+                    playOptionalReaction("jovem_escape")
                     showToast("PORTA DESTRANCADA! Corra para fora da casa!")
                 } else {
                     audioEngine.playLockedRattle()
+                    playOptionalReaction("jovem_locked")
                     showToast("Falta a Chave Mestra para abrir o cadeado!")
                     return
                 }
             } else {
                 door.isOpen = !door.isOpen
-                audioEngine.playDoorCreak()
+                if (door.isOpen) audioEngine.playDoorOpen() else audioEngine.playDoorClose()
             }
             return
         }
@@ -625,6 +738,7 @@ class HorrorGameEngine(
             if (req != null && inventoryItems.contains(req)) {
                 door.isUnlocked = true
                 door.isOpen = true
+                audioEngine.playUnlockDoor()
                 audioEngine.playDoorCreak()
                 showToast("${door.def.title} destrancada!")
                 if (req == "crowbar") {
@@ -632,38 +746,53 @@ class HorrorGameEngine(
                 }
             } else {
                 audioEngine.playLockedRattle()
+                playOptionalReaction("jovem_locked")
                 showToast(door.def.lockedHint)
             }
             return
         }
 
         door.isOpen = !door.isOpen
-        audioEngine.playDoorCreak()
+        if (door.isOpen) {
+            audioEngine.playDoorOpen()
+            audioEngine.playDoorCreak()
+        } else {
+            audioEngine.playDoorClose()
+        }
     }
 
     private fun handleItemPickup(item: WorldItemDef) {
         collectedItems.add(item.id)
-        audioEngine.playPickupKey()
         when (item.id) {
             "lantern" -> {
+                audioEngine.playPickupItem()
                 hasFlashlight = true
                 flashlightOn = true
+                playOptionalReaction("jovem_lantern")
                 showToast("Você pegou a Lanterna Tática!")
             }
             "medkit" -> {
+                audioEngine.playPickupItem()
                 health = (health + 45).coerceAtMost(100)
                 bloodPulseAlpha = 0f
                 showToast("Kit Médico usado! Vida restaurada.")
             }
-            "battery" -> {
+            "battery", "battery_attic" -> {
+                audioEngine.playPickupItem()
                 battery = (battery + 55f).coerceAtMost(100f)
                 showToast("Pilha carregada! Bateria em ${battery.toInt()}%.")
             }
             else -> {
+                if (item.id.contains("key")) audioEngine.playPickupKey() else audioEngine.playPickupItem()
                 inventoryItems.add(item.id)
                 showToast("Coletado: ${item.name}")
                 if (item.id == "master_key") {
+                    playOptionalReaction("jovem_key")
                     triggerGrannyPursuitReveal()
+                } else if (item.id.contains("key")) {
+                    playOptionalReaction("jovem_key")
+                } else {
+                    playOptionalReaction("jovem_item")
                 }
             }
         }
@@ -682,7 +811,8 @@ class HorrorGameEngine(
                 text = "Você não devia ter mexido nas minhas coisas, querido...",
                 isGranny = true,
                 expression = GrannyExpression.MENACING_GRIN,
-                durationSec = 4.2f,
+                durationSec = 3.7f,
+                voiceCueId = "vovo_pursuit",
             )
         )
     }
@@ -742,7 +872,7 @@ class HorrorGameEngine(
             stepTimer += dt
             if (stepTimer >= 0.56f) {
                 stepTimer = 0f
-                audioEngine.playFootstep(stealth = false)
+                audioEngine.playFootstep(stealth = false, surface = surfaceAt(playerX, playerZ))
             }
 
             // Granny slowly steps forward to the lit threshold during the second half of the intro
@@ -831,7 +961,7 @@ class HorrorGameEngine(
                 stepTimer += dt * baseSpeed
                 if (stepTimer >= 1.55f) {
                     stepTimer = 0f
-                    audioEngine.playFootstep(stealth = isCrouching)
+                    audioEngine.playFootstep(stealth = isCrouching, surface = surfaceAt(playerX, playerZ))
                 }
             }
         }
@@ -864,7 +994,8 @@ class HorrorGameEngine(
                     text = "Olá, meu jovem... Você está perdido?",
                     isGranny = true,
                     expression = GrannyExpression.GENTLE_SMILE,
-                    durationSec = 4.2f,
+                    durationSec = 3.6f,
+                    voiceCueId = "vovo_greeting_1",
                 )
             )
             enqueueDialogue(
@@ -873,7 +1004,8 @@ class HorrorGameEngine(
                     text = "Estou... Não sei onde estou. Pode me ajudar?",
                     isGranny = false,
                     expression = GrannyExpression.GENTLE_SMILE,
-                    durationSec = 4.0f,
+                    durationSec = 3.1f,
+                    voiceCueId = "jovem_porch",
                 )
             )
             enqueueDialogue(
@@ -882,7 +1014,8 @@ class HorrorGameEngine(
                     text = "Claro, querido. Entre. Está muito frio lá fora.",
                     isGranny = true,
                     expression = GrannyExpression.GENTLE_SMILE,
-                    durationSec = 4.5f,
+                    durationSec = 3.7f,
+                    voiceCueId = "vovo_greeting_2",
                 )
             )
         }
@@ -908,7 +1041,8 @@ class HorrorGameEngine(
                     text = "Agora você está seguro aqui dentro... Não tente sair esta noite.",
                     isGranny = true,
                     expression = GrannyExpression.SUSPICIOUS,
-                    durationSec = 4.5f,
+                    durationSec = 4.9f,
+                    voiceCueId = "vovo_door_slam",
                 )
             )
             showToast("A porta da frente bateu e trancou atrás de você!")
@@ -942,7 +1076,15 @@ class HorrorGameEngine(
             doors = doors,
             onTriggerDialogueHint = { speaker, text ->
                 if (currentDialogue == null) {
-                    enqueueDialogue(DialogueLine(speaker, text, isGranny = true, expression = granny.expression, durationSec = 3.8f))
+                    val cueId = when {
+                        text.contains("sopa", ignoreCase = true) -> "vovo_patrol_1"
+                        text.contains("trancadas", ignoreCase = true) -> "vovo_patrol_2"
+                        text.contains("ouvi passos", ignoreCase = true) -> "vovo_investigate"
+                        text.contains("ACHEI", ignoreCase = true) -> "vovo_found"
+                        text.contains("Para onde", ignoreCase = true) -> "vovo_lost"
+                        else -> null
+                    }
+                    enqueueDialogue(DialogueLine(speaker, text, isGranny = true, expression = granny.expression, durationSec = 3.8f, voiceCueId = cueId))
                 }
             },
             onAttackPlayer = {
@@ -952,20 +1094,47 @@ class HorrorGameEngine(
                 audioEngine.playHorrorSting()
                 if (health <= 0) {
                     isCaught = true
+                    audioEngine.playVoiceCue("vovo_attack", isGranny = true, srcX = granny.x, srcZ = granny.z, spatial = true)
                 } else {
+                    audioEngine.playScaredBreath()
+                    audioEngine.playVoiceCue("jovem_hurt", isGranny = false)
                     showToast("A Vovó atingiu você! Fuja ou se esconda!")
+                }
+            },
+            playerY = floorY,
+            onOpenDoor = { _ ->
+                val dist = sqrt((playerX - granny.x) * (playerX - granny.x) + (playerZ - granny.z) * (playerZ - granny.z))
+                if (dist < 16f) {
+                    audioEngine.playDoorOpen()
+                    audioEngine.playDoorCreak()
                 }
             },
         )
 
-        val distGranny = sqrt((playerX - granny.x) * (playerX - granny.x) + (playerZ - granny.z) * (playerZ - granny.z))
+        // Synchronize Granny spatial footsteps with her actual 3D walkCycle stride
+        if (granny.currentMoveSpeedNorm > 0.08f && !captureArmed) {
+            val beat = floor((granny.walkCycle / PI.toFloat()).toDouble()).toInt()
+            if (beat != grannyLastStepBeat) {
+                grannyLastStepBeat = beat
+                audioEngine.playSpatialFootstep(
+                    stealth = false,
+                    srcX = granny.x,
+                    srcZ = granny.z,
+                    surface = surfaceAt(granny.x, granny.z),
+                    isGranny = true,
+                )
+            }
+        }
+
+        val dyGranny = (floorY - granny.y) * 1.3f
+        val distGranny = sqrt((playerX - granny.x) * (playerX - granny.x) + dyGranny * dyGranny + (playerZ - granny.z) * (playerZ - granny.z))
         val danger = if (storyPhase == StoryPhase.INTRO_ROAD || storyPhase == StoryPhase.PORCH_DIALOGUE) {
             0f
         } else {
             ((10f - distGranny) / 8.5f).coerceIn(0f, 1f)
         }
         val suspense = if (captureArmed) 0.55f else danger
-        audioEngine.updateEnvironment(insideHouse = playerZ < 10.0f, dangerLevel = danger, suspenseLevel = suspense)
+        audioEngine.updateEnvironment(insideHouse = playerZ < 10.0f && playerX <= 16.5f, dangerLevel = danger, suspenseLevel = suspense)
 
         // Atmospheric positional wood creaks & window draft inside the house
         if (playerZ < 10.0f && !captureArmed) {
@@ -991,14 +1160,17 @@ class HorrorGameEngine(
         activeNoteBody = null
         toastText = null
         dialogueQueue.clear()
-        currentDialogue = DialogueLine(
+        val ambushLine = DialogueLine(
             speaker = "Vovó",
             text = "Você não devia ter confiado na velha da estrada, querido...",
             isGranny = true,
             expression = GrannyExpression.MENACING_GRIN,
             durationSec = 3.2f,
+            voiceCueId = "vovo_ambush",
         )
+        currentDialogue = ambushLine
         dialogueTimer = 0f
+        playDialogueAudio(ambushLine)
 
         captureStartCamX = playerX.coerceIn(-1.6f, 1.6f)
         captureStartCamY = playerY
@@ -1105,6 +1277,11 @@ class HorrorGameEngine(
                     collapseThudPlayed = true
                     audioEngine.playBodyThud()
                     audioEngine.playWoodCreak()
+                    audioEngine.playVoiceCue(
+                        cueId = "jovem_capture_gasp",
+                        isGranny = false,
+                        priority = com.example.audio.VoicePriority.CUTSCENE_URGENT,
+                    )
                 }
 
                 granny.currentMoveSpeedNorm = 0f
@@ -1257,7 +1434,7 @@ class HorrorGameEngine(
                         0 -> audioEngine.playBodyDrag()
                         1 -> {
                             audioEngine.playWoodCreak()
-                            audioEngine.playFootstep(stealth = false)
+                            audioEngine.playFootstep(stealth = false, surface = FootstepSurface.WOOD)
                         }
                         else -> {
                             audioEngine.playBodyDrag()
@@ -1446,6 +1623,7 @@ class HorrorGameEngine(
                 if (nextStageTimer >= 0.70f && !wakeWindPlayed) {
                     wakeWindPlayed = true
                     audioEngine.playWindowWind(11.9f, -5.8f)
+                    audioEngine.playScaredBreath()
                 }
                 if (nextStageTimer >= 1.35f && !wakeLine1Played) {
                     wakeLine1Played = true
@@ -1454,7 +1632,8 @@ class HorrorGameEngine(
                         speaker = "Jovem",
                         text = "Ugh... Onde eu estou?",
                         isGranny = false,
-                        durationSec = 2.45f,
+                        durationSec = 2.35f,
+                        voiceCueId = "jovem_wake_1",
                     )
                     dialogueTimer = 0f
                 }
@@ -1508,7 +1687,8 @@ class HorrorGameEngine(
                         speaker = "Jovem",
                         text = "Que lugar é esse?",
                         isGranny = false,
-                        durationSec = 2.5f,
+                        durationSec = 2.0f,
+                        voiceCueId = "jovem_wake_2",
                     )
                     dialogueTimer = 0f
                 }
@@ -1574,7 +1754,8 @@ class HorrorGameEngine(
                         text = "Meu querido... Você já acordou?",
                         isGranny = true,
                         expression = GrannyExpression.CREEPY_STARE,
-                        durationSec = 2.75f,
+                        durationSec = 2.55f,
+                        voiceCueId = "vovo_wake_1",
                     )
                     dialogueTimer = 0f
                 }
@@ -1582,7 +1763,7 @@ class HorrorGameEngine(
                     hallwayCreakPlayed = true
                     audioEngine.playSpatialWoodCreak(2.0f, -1.5f)
                 }
-                if (nextStageTimer >= 3.20f && !grannyVoice2Played) {
+                if (nextStageTimer >= 2.95f && !grannyVoice2Played) {
                     grannyVoice2Played = true
                     audioEngine.playGrannyVoice(1, 1.8f, -1.5f)
                     currentDialogue = DialogueLine(
@@ -1590,7 +1771,8 @@ class HorrorGameEngine(
                         text = "Não adianta se esconder... Eu sei que você está aqui.",
                         isGranny = true,
                         expression = GrannyExpression.MENACING_GRIN,
-                        durationSec = 3.1f,
+                        durationSec = 3.35f,
+                        voiceCueId = "vovo_wake_2",
                     )
                     dialogueTimer = 0f
                 }
@@ -1698,7 +1880,7 @@ class HorrorGameEngine(
                 hideStepAccum += dt
                 if (hideStepAccum >= 0.42f && t < 0.88f) {
                     hideStepAccum = 0f
-                    audioEngine.playFootstep(stealth = t > 0.55f)
+                    audioEngine.playFootstep(stealth = t > 0.55f, surface = FootstepSurface.WOOD)
                 }
 
                 // Transition smoothly to Under-Bed POV over final 0.55s
@@ -1821,6 +2003,10 @@ class HorrorGameEngine(
                         granny.searchBendDeg = 14f + sin((t - 5.4f) * 2.0f) * 6f
                         granny.headLookYawDeg = sin((t - 5.4f) * 2.6f) * 34f
                         grannyMoving = true
+                        if (t >= 6.85f && !grannySearchMutterPlayed) {
+                            grannySearchMutterPlayed = true
+                            audioEngine.playGrannyVoice(2, granny.x, granny.z)
+                        }
                     }
                     t < 8.7f -> {
                         // Suspicious pause near the bed legs while peeking slightly down
@@ -1862,7 +2048,13 @@ class HorrorGameEngine(
                     grannySearchStepAccum += dt
                     if (grannySearchStepAccum >= 0.62f) {
                         grannySearchStepAccum = 0f
-                        audioEngine.playSpatialFootstep(stealth = false, srcX = granny.x, srcZ = granny.z)
+                        audioEngine.playSpatialFootstep(
+                            stealth = false,
+                            srcX = granny.x,
+                            srcZ = granny.z,
+                            surface = surfaceAt(granny.x, granny.z),
+                            isGranny = true,
+                        )
                     }
                 } else {
                     granny.currentMoveSpeedNorm = 0f
@@ -1957,6 +2149,7 @@ class HorrorGameEngine(
         if (isCinematicIntro || captureState.stage != CaptureStage.NONE || awakeningState.stage != AwakeningStage.NONE || isHiding) return null
         val lookX = sin(playerYawRad)
         val lookZ = cos(playerYawRad)
+        val playerFloorY = if (isHidingUnderBed) 0f else WorldMap3D.floorHeightAt(playerX, playerZ)
 
         var bestScore = Float.MAX_VALUE
         var best: InteractionPrompt? = null
@@ -1964,10 +2157,17 @@ class HorrorGameEngine(
         // Check items
         for (item in WorldMap3D.itemDefs) {
             if (item.kind == InteractKind.ITEM && collectedItems.contains(item.id)) continue
+            if (item.kind == InteractKind.DRAWER && openedDrawers.contains(item.id)) continue
+            if (item.kind == InteractKind.SECRET_LEVER &&
+                doors.firstOrNull { it.def.id == "secret_bookshelf_door" }?.isUnlocked == true
+            ) continue
+            if (abs(item.y - (playerFloorY + 0.9f)) > 1.35f) continue
+
             val dx = item.x - playerX
             val dz = item.z - playerZ
             val dist = sqrt(dx * dx + dz * dz)
-            if (dist > 2.4f) continue
+            val maxDist = if (item.kind == InteractKind.ESCAPE_CAR) 3.4f else 2.4f
+            if (dist > maxDist) continue
             val dot = (dx * lookX + dz * lookZ) / dist.coerceAtLeast(0.01f)
             if (dot < 0.35f && dist > 1.0f) continue
             if (dist < bestScore) {
@@ -1978,6 +2178,9 @@ class HorrorGameEngine(
                     InteractKind.HIDE_CLOSET -> "Esconder no Armário"
                     InteractKind.HIDE_BED -> "Esconder Debaixo da Cama"
                     InteractKind.FUSE_BOX -> "Inspecionar Caixa de Energia"
+                    InteractKind.DRAWER -> "Vasculhar ${item.name}"
+                    InteractKind.SECRET_LEVER -> "Puxar ${item.name}"
+                    InteractKind.ESCAPE_CAR -> "Consertar / Fugir no Carro"
                     InteractKind.DOOR -> item.name
                 }
                 best = InteractionPrompt(item.id, verb, item.description)
@@ -1986,6 +2189,7 @@ class HorrorGameEngine(
 
         // Check doors
         for (door in doors) {
+            if (abs(door.def.baseY - playerFloorY) > 1.25f) continue
             val yawRad = (door.def.closedYawDeg + door.currentAngleDeg) * (PI.toFloat() / 180f)
             val midX = door.def.hingeX + cos(yawRad) * (door.def.width * 0.5f)
             val midZ = door.def.hingeZ + sin(yawRad) * (door.def.width * 0.5f)
@@ -1997,6 +2201,9 @@ class HorrorGameEngine(
                 bestScore = dist
                 val label = when {
                     door.def.id == "front_door" && frontDoorSlammed && !door.isUnlocked -> "Destrancar Porta da Frente"
+                    door.def.isSecretBookshelf && !door.isUnlocked -> "Examinar Estante Suspeita"
+                    door.def.isSecretBookshelf && door.isOpen -> "Fechar Passagem Secreta"
+                    door.def.isSecretBookshelf -> "Abrir Passagem Secreta"
                     !door.isUnlocked -> "Abrir ${door.def.title} (Trancada)"
                     door.isOpen -> "Fechar ${door.def.title}"
                     else -> "Abrir ${door.def.title}"
@@ -2008,7 +2215,9 @@ class HorrorGameEngine(
     }
 
     fun hudSnapshot(): GameHudSnapshot {
-        val distGranny = sqrt((playerX - granny.x) * (playerX - granny.x) + (playerZ - granny.z) * (playerZ - granny.z))
+        val playerFloorY = if (isHidingUnderBed) 0f else WorldMap3D.floorHeightAt(playerX, playerZ)
+        val dyGranny = (playerFloorY - granny.y) * 1.3f
+        val distGranny = sqrt((playerX - granny.x) * (playerX - granny.x) + dyGranny * dyGranny + (playerZ - granny.z) * (playerZ - granny.z))
         val danger = if (storyPhase == StoryPhase.INTRO_ROAD || storyPhase == StoryPhase.PORCH_DIALOGUE) {
             0f
         } else {
@@ -2024,7 +2233,7 @@ class HorrorGameEngine(
             storyPhase == StoryPhase.INTRO_ROAD -> "Caminhe pela estrada até a casa iluminada"
             storyPhase == StoryPhase.PORCH_DIALOGUE -> "Fale com a senhora e entre na casa"
             storyPhase == StoryPhase.INSIDE_MYSTERY -> "Explore a casa, encontre a Lanterna e pistas de saída"
-            storyPhase == StoryPhase.GRANNYS_PURSUIT -> "CUIDADO! Corte o fio, ligue o fusível e use a Chave Mestra!"
+            storyPhase == StoryPhase.GRANNYS_PURSUIT -> "CUIDADO! Escape pela porta (fio, fusível, Chave Mestra) ou pelo carro dos fundos!"
             else -> "Você escapou da Casa da Vovó!"
         }
 
@@ -2073,6 +2282,7 @@ class HorrorGameEngine(
             frontPadlockOpened = front?.frontPadlockOpened ?: false,
             isCaught = isCaught,
             isEscaped = isEscaped,
+            escapedByCar = escapedByCar,
             playTimeSeconds = playTimeSecFloat.toInt(),
             statusToast = toastText,
         )
@@ -2082,10 +2292,49 @@ class HorrorGameEngine(
         if (currentDialogue == null) {
             currentDialogue = line
             dialogueTimer = 0f
-            audioEngine.playDialogueCue(line.isGranny)
+            playDialogueAudio(line)
         } else {
             dialogueQueue.addLast(line)
         }
+    }
+
+    private fun playDialogueAudio(line: DialogueLine) {
+        val spatial = line.isGranny && playerZ < 10.0f && storyPhase != StoryPhase.PORCH_DIALOGUE
+        val playedRealVoice = audioEngine.playVoiceCue(
+            cueId = line.voiceCueId,
+            isGranny = line.isGranny,
+            srcX = granny.x,
+            srcZ = granny.z,
+            spatial = spatial,
+        )
+        if (!playedRealVoice) {
+            audioEngine.playDialogueCue(line.isGranny)
+        }
+    }
+
+    private fun playOptionalReaction(cueId: String) {
+        if (currentDialogue != null) return
+        if (playTimeSecFloat - lastVoiceReactionAtSec < 4.5f) return
+        lastVoiceReactionAtSec = playTimeSecFloat
+        audioEngine.playVoiceCue(
+            cueId = cueId,
+            isGranny = false,
+            priority = com.example.audio.VoicePriority.AMBIENT_REACTION,
+        )
+    }
+
+    internal fun surfaceAt(x: Float, z: Float): FootstepSurface {
+        if (WorldMap3D.floorHeightAt(x, z) > 0.2f) return FootstepSurface.WOOD
+        if (z > 11.8f || x > 16.5f || (x > 12.0f && z < 2.0f) || x < -16.2f || z < -22.2f) {
+            return FootstepSurface.DIRT
+        }
+        val inKitchen = x in 3.0f..16.5f && z in 2.0f..10.0f
+        val inBathroom = x in -16.2f..-12.0f && z in -16.0f..-8.0f
+        val inCellarOrVault = z < -8.0f && x in -12.0f..6.0f && !(x in -12.0f..-6.0f && z >= -16.0f)
+        if (inKitchen || inBathroom || inCellarOrVault) {
+            return FootstepSurface.TILE_STONE
+        }
+        return FootstepSurface.WOOD
     }
 
     private fun lerpRad(a: Float, b: Float, alpha: Float): Float {

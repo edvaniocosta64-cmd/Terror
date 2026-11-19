@@ -30,6 +30,13 @@ enum class FootstepSurface {
     TILE_STONE,
 }
 
+enum class VoicePriority(val level: Int) {
+    AMBIENT_REACTION(0),
+    GRANNY_MUTTER(1),
+    DIALOGUE(2),
+    CUTSCENE_URGENT(3),
+}
+
 /**
  * Hybrid horror audio engine:
  * - Real Ogg Vorbis SFX preloaded in SoundPool (varied surface footsteps, doors, locks, creaks, hits, tension)
@@ -126,6 +133,12 @@ class HorrorAudioEngine(
     private val voiceLock = Any()
     private val voiceGeneration = AtomicInteger(0)
     private var activeVoicePlayer: MediaPlayer? = null
+
+    @Volatile
+    private var activeVoiceCueId: String? = null
+
+    @Volatile
+    private var activeVoicePriority: VoicePriority = VoicePriority.AMBIENT_REACTION
 
     private val ambientPlayersLock = Any()
     private var ambientInitStarted = false
@@ -828,8 +841,9 @@ class HorrorAudioEngine(
 
     /**
      * Plays a real Brazilian Portuguese voice file from res/raw asynchronously on IO dispatcher
-     * with spatial stereo attenuation & ambient music ducking.
-     * Returns true if a real voice resource was scheduled, false if fallback is needed.
+     * with priority-based anti-overlap gating, spatial stereo attenuation & ambient music ducking.
+     * Returns true if a real voice resource was scheduled or cleanly suppressed due to priority/distance,
+     * false only if no Android resource/context exists (allowing headless synth fallback).
      */
     fun playVoiceCue(
         cueId: String?,
@@ -837,6 +851,7 @@ class HorrorAudioEngine(
         srcX: Float = listenerX,
         srcZ: Float = listenerZ,
         spatial: Boolean = false,
+        priority: VoicePriority = defaultPriorityFor(cueId),
     ): Boolean {
         val resId = cueId?.let { resolveVoiceResId(it) }
         val ctx = context?.applicationContext ?: context
@@ -847,8 +862,22 @@ class HorrorAudioEngine(
         val (leftGain, rightGain) = computeVoiceStereoGains(srcX, srcZ, spatial)
         if (leftGain <= 0.01f && rightGain <= 0.01f) return true
 
-        val gen = voiceGeneration.incrementAndGet()
-        isVoicePlaying = true
+        val gen: Int
+        synchronized(voiceLock) {
+            if (isVoicePlaying) {
+                // Prevent lower-priority lines from interrupting active dialogues/cutscenes,
+                // and prevent ambient mutters/reactions from overlapping one another.
+                if (priority.level < activeVoicePriority.level ||
+                    (priority.level <= VoicePriority.GRANNY_MUTTER.level && priority.level <= activeVoicePriority.level)
+                ) {
+                    return true
+                }
+            }
+            gen = voiceGeneration.incrementAndGet()
+            isVoicePlaying = true
+            activeVoiceCueId = cueId
+            activeVoicePriority = priority
+        }
         updateAmbientLoopVolumes()
 
         scope.launch(Dispatchers.IO) {
@@ -858,6 +887,13 @@ class HorrorAudioEngine(
                 created = MediaPlayer.create(ctx, resId)
                 if (created == null || isReleased || voiceGeneration.get() != gen) {
                     created?.release()
+                    synchronized(voiceLock) {
+                        if (voiceGeneration.get() == gen && activeVoicePlayer == null) {
+                            isVoicePlaying = false
+                            activeVoiceCueId = null
+                        }
+                    }
+                    updateAmbientLoopVolumes()
                     return@launch
                 }
 
@@ -867,6 +903,7 @@ class HorrorAudioEngine(
                         if (activeVoicePlayer === mp) {
                             activeVoicePlayer = null
                             isVoicePlaying = false
+                            activeVoiceCueId = null
                         }
                     }
                     try {
@@ -880,6 +917,7 @@ class HorrorAudioEngine(
                         if (activeVoicePlayer === mp) {
                             activeVoicePlayer = null
                             isVoicePlaying = false
+                            activeVoiceCueId = null
                         }
                     }
                     try {
@@ -915,8 +953,9 @@ class HorrorAudioEngine(
                 } catch (_: Throwable) {
                 }
                 synchronized(voiceLock) {
-                    if (activeVoicePlayer == null) {
+                    if (voiceGeneration.get() == gen && activeVoicePlayer == null) {
                         isVoicePlaying = false
+                        activeVoiceCueId = null
                     }
                 }
                 updateAmbientLoopVolumes()
@@ -925,14 +964,44 @@ class HorrorAudioEngine(
         return true
     }
 
-    private fun computeVoiceStereoGains(srcX: Float, srcZ: Float, spatial: Boolean): Pair<Float, Float> {
+    fun stopVoice() {
+        voiceGeneration.incrementAndGet()
+        synchronized(voiceLock) {
+            try {
+                activeVoicePlayer?.stop()
+            } catch (_: Throwable) {
+            }
+            try {
+                activeVoicePlayer?.release()
+            } catch (_: Throwable) {
+            }
+            activeVoicePlayer = null
+            isVoicePlaying = false
+            activeVoiceCueId = null
+        }
+        updateAmbientLoopVolumes()
+    }
+
+    fun isVoiceCurrentlyPlaying(): Boolean = isVoicePlaying
+
+    fun getActiveVoiceCueId(): String? = activeVoiceCueId
+
+    fun isEnginePaused(): Boolean = isPaused
+
+    fun isEngineReleased(): Boolean = isReleased
+
+    internal fun computeVoiceStereoGains(srcX: Float, srcZ: Float, spatial: Boolean): Pair<Float, Float> {
         val voiceGain = (masterVol * sfxVol * 1.0f).coerceIn(0f, 1.0f)
         if (!spatial) return voiceGain to voiceGain
 
         val dx = srcX - listenerX
         val dz = srcZ - listenerZ
         val dist = sqrt(dx * dx + dz * dz)
-        val atten = (1.0f / (1.0f + 0.08f * dist + 0.008f * dist * dist)).coerceIn(0.24f, 1.0f)
+        val maxDist = 26.0f
+        if (dist >= maxDist) return 0f to 0f
+
+        val fadeOut = 1.0f - ((dist - (maxDist - 6.0f)) / 6.0f).coerceIn(0f, 1f)
+        val atten = ((1.0f / (1.0f + 0.07f * dist + 0.008f * dist * dist)) * fadeOut).coerceIn(0f, 1.0f)
         val total = (voiceGain * atten).coerceIn(0f, 1.0f)
 
         val rightX = -cos(listenerYawRad)
@@ -941,6 +1010,13 @@ class HorrorAudioEngine(
         val left = (total * (1f - 0.35f * panDot)).coerceIn(0f, 1f)
         val right = (total * (1f + 0.35f * panDot)).coerceIn(0f, 1f)
         return left to right
+    }
+
+    private fun defaultPriorityFor(cueId: String?): VoicePriority = when (cueId) {
+        "vovo_ambush", "jovem_capture_gasp", "vovo_attack", "jovem_hurt" -> VoicePriority.CUTSCENE_URGENT
+        "vovo_patrol_1", "vovo_patrol_2", "vovo_investigate", "vovo_lost" -> VoicePriority.GRANNY_MUTTER
+        "jovem_lantern", "jovem_key", "jovem_item", "jovem_note", "jovem_locked", "jovem_hide" -> VoicePriority.AMBIENT_REACTION
+        else -> VoicePriority.DIALOGUE
     }
 
     internal fun resolveVoiceResId(cueId: String): Int? = VOICE_RESOURCE_MAP[cueId]
@@ -1067,6 +1143,7 @@ class HorrorAudioEngine(
             ambWindPlayer = null
             ambHousePlayer = null
         }
+        voiceGeneration.incrementAndGet()
         synchronized(voiceLock) {
             try {
                 activeVoicePlayer?.stop()
@@ -1078,6 +1155,7 @@ class HorrorAudioEngine(
             }
             activeVoicePlayer = null
             isVoicePlaying = false
+            activeVoiceCueId = null
         }
         scope.cancel()
     }

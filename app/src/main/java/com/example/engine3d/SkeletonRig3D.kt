@@ -34,6 +34,9 @@ enum class CharacterMeshKind {
     JOINT_SPHERE,
     PALM,
     FINGER,
+    DISTAL_FINGER,
+    SLEEVE_CUFF,
+    JACKET_COLLAR,
     THIGH,
     SHIN,
     FOOT_SHOE,
@@ -66,6 +69,9 @@ interface CharacterMeshProvider<M> {
     val jointSphere: M
     val palmMesh: M
     val fingerMesh: M
+    val distalFinger: M
+    val sleeveCuff: M
+    val jacketCollar: M
     val thighMesh: M
     val shinMesh: M
     val footShoeMesh: M
@@ -82,7 +88,7 @@ interface CharacterMeshProvider<M> {
  */
 class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     override val sculptedHeadGranny: MeshData = MeshBuilder3D().apply {
-        addSculptedHead(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 18, sectors = 24, gauntness = 0.55f)
+        addSculptedHead(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 22, sectors = 28, gauntness = 0.68f)
     }.build()
 
     override val jawGranny: MeshData = MeshBuilder3D().apply {
@@ -90,12 +96,14 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val hairBun: MeshData = MeshBuilder3D().apply {
-        addEllipsoid(cx = 0f, cy = 0.04f, cz = -0.105f, rx = 0.088f, ry = 0.082f, rz = 0.078f, rings = 12, sectors = 16)
-        addEllipsoid(cx = 0f, cy = 0.03f, cz = -0.01f, rx = 0.112f, ry = 0.105f, rz = 0.118f, rings = 12, sectors = 18)
+        addEllipsoid(cx = 0f, cy = 0.04f, cz = -0.108f, rx = 0.088f, ry = 0.082f, rz = 0.078f, rings = 12, sectors = 16)
+        addEllipsoid(cx = 0f, cy = 0.032f, cz = -0.01f, rx = 0.112f, ry = 0.105f, rz = 0.118f, rings = 12, sectors = 18)
+        addEllipsoid(cx = 0.082f, cy = 0.055f, cz = 0.018f, rx = 0.036f, ry = 0.042f, rz = 0.052f, rings = 8, sectors = 12)
+        addEllipsoid(cx = -0.082f, cy = 0.055f, cz = 0.018f, rx = 0.036f, ry = 0.042f, rz = 0.052f, rings = 8, sectors = 12)
     }.build()
 
     override val hairStrand: MeshData = MeshBuilder3D().apply {
-        addTaperedLimb(yBottom = -0.15f, yTop = 0.02f, rxBottom = 0.012f, rzBottom = 0.014f, rxTop = 0.032f, rzTop = 0.028f, rings = 5, sectors = 10)
+        addTaperedLimb(yBottom = -0.15f, yTop = 0.02f, rxBottom = 0.011f, rzBottom = 0.013f, rxTop = 0.030f, rzTop = 0.026f, rings = 5, sectors = 10)
     }.build()
 
     override val neckMesh: MeshData = MeshBuilder3D().apply {
@@ -109,13 +117,13 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
             waistRx = 0.135f, waistRz = 0.108f,
             chestRx = 0.172f, chestRz = 0.128f,
             shoulderRx = 0.188f, shoulderRz = 0.105f,
-            hunchCurveZ = 0.038f,
-            sectors = 18,
+            hunchCurveZ = 0.040f,
+            sectors = 20,
         )
     }.build()
 
     override val skirtGranny: MeshData = MeshBuilder3D().apply {
-        addFlaredSkirt(yBottom = -0.74f, yTop = 0.05f, topRx = 0.155f, topRz = 0.125f, botRx = 0.31f, botRz = 0.28f, rings = 7, sectors = 24)
+        addFlaredSkirt(yBottom = -0.74f, yTop = 0.05f, topRx = 0.155f, topRz = 0.125f, botRx = 0.31f, botRz = 0.28f, rings = 9, sectors = 28)
     }.build()
 
     override val shawlCollar: MeshData = MeshBuilder3D().apply {
@@ -151,11 +159,24 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val palmMesh: MeshData = MeshBuilder3D().apply {
-        addEllipsoid(cx = 0f, cy = -0.042f, cz = 0f, rx = 0.036f, ry = 0.046f, rz = 0.018f, rings = 8, sectors = 12)
+        addEllipsoid(cx = 0f, cy = -0.040f, cz = 0f, rx = 0.036f, ry = 0.044f, rz = 0.017f, rings = 8, sectors = 12)
     }.build()
 
     override val fingerMesh: MeshData = MeshBuilder3D().apply {
-        addTaperedLimb(yBottom = -0.062f, yTop = 0f, rxBottom = 0.007f, rzBottom = 0.007f, rxTop = 0.010f, rzTop = 0.010f, rings = 4, sectors = 8)
+        addTaperedLimb(yBottom = -0.036f, yTop = 0f, rxBottom = 0.008f, rzBottom = 0.008f, rxTop = 0.010f, rzTop = 0.010f, rings = 3, sectors = 8)
+        addEllipsoid(cx = 0f, cy = 0f, cz = 0f, rx = 0.010f, ry = 0.010f, rz = 0.010f, rings = 5, sectors = 8)
+    }.build()
+
+    override val distalFinger: MeshData = MeshBuilder3D().apply {
+        addTaperedLimb(yBottom = -0.032f, yTop = 0f, rxBottom = 0.006f, rzBottom = 0.006f, rxTop = 0.0085f, rzTop = 0.0085f, rings = 3, sectors = 8)
+    }.build()
+
+    override val sleeveCuff: MeshData = MeshBuilder3D().apply {
+        addTaperedLimb(yBottom = -0.045f, yTop = 0.015f, rxBottom = 0.044f, rzBottom = 0.044f, rxTop = 0.048f, rzTop = 0.048f, rings = 3, sectors = 12, bulgeFactor = 0.004f)
+    }.build()
+
+    override val jacketCollar: MeshData = MeshBuilder3D().apply {
+        addTaperedLimb(yBottom = -0.02f, yTop = 0.065f, rxBottom = 0.115f, rzBottom = 0.095f, rxTop = 0.082f, rzTop = 0.074f, rings = 3, sectors = 14)
     }.build()
 
     override val thighMesh: MeshData = MeshBuilder3D().apply {
@@ -167,11 +188,11 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val footShoeMesh: MeshData = MeshBuilder3D().apply {
-        addEllipsoid(cx = 0f, cy = -0.025f, cz = 0.048f, rx = 0.048f, ry = 0.034f, rz = 0.115f, rings = 8, sectors = 14)
+        addModeledBoot()
     }.build()
 
     override val sculptedHeadPlayer: MeshData = MeshBuilder3D().apply {
-        addSculptedHead(rx = 0.104f, ry = 0.128f, rz = 0.114f, rings = 16, sectors = 22, gauntness = 0.08f)
+        addSculptedHead(rx = 0.104f, ry = 0.128f, rz = 0.114f, rings = 20, sectors = 26, gauntness = 0.10f)
     }.build()
 
     override val shortHairPlayer: MeshData = MeshBuilder3D().apply {
@@ -187,7 +208,7 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
             chestRx = 0.195f, chestRz = 0.132f,
             shoulderRx = 0.215f, shoulderRz = 0.112f,
             hunchCurveZ = 0.0f,
-            sectors = 18,
+            sectors = 20,
         )
     }.build()
 
@@ -218,6 +239,9 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
         CharacterMeshKind.JOINT_SPHERE -> jointSphere
         CharacterMeshKind.PALM -> palmMesh
         CharacterMeshKind.FINGER -> fingerMesh
+        CharacterMeshKind.DISTAL_FINGER -> distalFinger
+        CharacterMeshKind.SLEEVE_CUFF -> sleeveCuff
+        CharacterMeshKind.JACKET_COLLAR -> jacketCollar
         CharacterMeshKind.THIGH -> thighMesh
         CharacterMeshKind.SHIN -> shinMesh
         CharacterMeshKind.FOOT_SHOE -> footShoeMesh
@@ -254,6 +278,9 @@ class CharacterMeshLibrary(
     override val jointSphere: GpuMesh = cpuMeshes.jointSphere.toGpuMesh()
     override val palmMesh: GpuMesh = cpuMeshes.palmMesh.toGpuMesh()
     override val fingerMesh: GpuMesh = cpuMeshes.fingerMesh.toGpuMesh()
+    override val distalFinger: GpuMesh = cpuMeshes.distalFinger.toGpuMesh()
+    override val sleeveCuff: GpuMesh = cpuMeshes.sleeveCuff.toGpuMesh()
+    override val jacketCollar: GpuMesh = cpuMeshes.jacketCollar.toGpuMesh()
     override val thighMesh: GpuMesh = cpuMeshes.thighMesh.toGpuMesh()
     override val shinMesh: GpuMesh = cpuMeshes.shinMesh.toGpuMesh()
     override val footShoeMesh: GpuMesh = cpuMeshes.footShoeMesh.toGpuMesh()
@@ -268,7 +295,8 @@ class CharacterMeshLibrary(
             sculptedHeadGranny, jawGranny, hairBun, hairStrand, neckMesh,
             torsoGranny, skirtGranny, shawlCollar, eyeball, irisPupil,
             browMesh, eyelidMesh, upperArm, forearm, jointSphere,
-            palmMesh, fingerMesh, thighMesh, shinMesh, footShoeMesh,
+            palmMesh, fingerMesh, distalFinger, sleeveCuff, jacketCollar,
+            thighMesh, shinMesh, footShoeMesh,
             sculptedHeadPlayer, shortHairPlayer, torsoPlayer, flashlightBody, flashlightLens,
         ).forEach { it.release() }
     }
@@ -410,25 +438,26 @@ object GrannyRigAnimator {
         val breath = sin(g.breathPhase)
         val strideSin = sin(g.walkCycle)
         val strideCos = cos(g.walkCycle)
-        val isHunting = g.aiState == GrannyAiState.HUNTING_PLAYER
         val isHostile = g.expression == GrannyExpression.MENACING_GRIN || g.expression == GrannyExpression.HOSTILE_SHRIEK
         val dragBlend = g.dragGripBlend.coerceIn(0f, 1f)
+        val huntBlend = g.huntBlend.coerceIn(0f, 1f)
+        val doorReach = g.doorReachArmBlend.coerceIn(0f, 1f)
         val pullTug = if (g.isDraggingCapture) sin(g.dragPullPhase) else 0f
 
         val hipBob = kotlin.math.abs(strideCos) * 0.032f * speedNorm + breath * 0.008f - dragBlend * 0.08f
-        val baseHunch = when (g.aiState) {
-            GrannyAiState.HUNTING_PLAYER -> 20f
-            GrannyAiState.INVESTIGATING_NOISE -> 16f
+        val stateHunch = when (g.aiState) {
             GrannyAiState.WAITING_AT_DOOR, GrannyAiState.GREETING_DIALOGUE -> 6f
+            GrannyAiState.INVESTIGATING_NOISE -> 16f
             else -> 11f
         }
+        val baseHunch = stateHunch * (1f - huntBlend) + 21f * huntBlend
         val spineHunch = baseHunch + dragBlend * (34f - pullTug * 5f) +
             (if (g.isLoomingCapture) 14f else 0f) +
-            (if (g.isSearchingRoom) g.searchBendDeg else 0f) +
+            (if (g.isSearchingRoom) g.searchBendDeg else g.searchBendDeg * g.searchBlend) +
             breath * 1.6f
 
         stack.resetIdentity()
-        stack.translate(g.x, 0f, g.z)
+        stack.translate(g.x, g.y, g.z)
         stack.rotate(g.yawDeg, 0f, 1f, 0f)
 
         // Pelvis Root
@@ -499,47 +528,51 @@ object GrannyRigAnimator {
         stack.pop() // Head
         stack.pop() // Neck
 
-        // Left & Right Arms (welcoming gesture on porch, door slam reach, ankle grip drag, or hunting claws!)
-        val doorGesture = g.doorSlamGestureTimer.coerceIn(0f, 1f)
+        // Left & Right Arms (welcoming gesture on porch, door reach/slam, ankle grip drag, or smooth hunting claws!)
+        val doorGesture = maxOf(g.doorSlamGestureTimer.coerceIn(0f, 1f), doorReach)
         val greetingWave = if (g.aiState == GrannyAiState.GREETING_DIALOGUE) {
             sin(elapsedSec * 2.2f) * 14f - 26f
         } else 0f
+
+        val normalPitchL = -8f - strideSin * 24f * speedNorm
+        val huntPitchL = -76f + strideSin * 26f
+        val baseBlendPitchL = normalPitchL * (1f - huntBlend) + huntPitchL * huntBlend
+
+        val normalPitchR = -8f + strideSin * 24f * speedNorm
+        val huntPitchR = -76f - strideSin * 26f
+        val baseBlendPitchR = normalPitchR * (1f - huntBlend) + huntPitchR * huntBlend
 
         val armPitchL = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -46f * dragBlend + pullTug * 8f
             g.isLoomingCapture -> -28f + sin(elapsedSec * 2.6f) * 6f
             g.isSearchingRoom -> -24f - strideSin * 16f * speedNorm
-            isHunting -> -76f + strideSin * 26f
-            doorGesture > 0.05f -> -64f * doorGesture
+            doorGesture > 0.05f -> baseBlendPitchL * (1f - doorGesture) + (-66f) * doorGesture
             g.aiState == GrannyAiState.GREETING_DIALOGUE -> greetingWave
-            else -> -8f - strideSin * 24f * speedNorm
+            else -> baseBlendPitchL
         }
         val armPitchR = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -46f * dragBlend + pullTug * 8f
             g.isLoomingCapture -> -24f - sin(elapsedSec * 2.6f) * 6f
             g.isSearchingRoom -> -28f + strideSin * 16f * speedNorm
-            isHunting -> -76f - strideSin * 26f
             g.aiState == GrannyAiState.INVESTIGATING_NOISE -> -35f
-            else -> -8f + strideSin * 24f * speedNorm
+            else -> baseBlendPitchR
         }
+        val baseElbow = -22f * (1f - huntBlend) + (-36f) * huntBlend
         val elbowFlexL = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -16f
             g.isLoomingCapture -> -28f
-            isHunting -> -36f
             g.aiState == GrannyAiState.GREETING_DIALOGUE -> -52f
-            else -> -22f
+            else -> baseElbow
         }
         val elbowFlexR = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -16f
             g.isLoomingCapture -> -28f
-            isHunting -> -36f
-            else -> -22f
+            else -> baseElbow
         }
 
         val shoulderRollMag = when {
-            g.isDraggingCapture || dragBlend > 0.05f -> -7f // pinch inward slightly to hold his ankles
-            isHunting -> 12f
-            else -> 8f
+            g.isDraggingCapture || dragBlend > 0.05f -> -7f
+            else -> 8f * (1f - huntBlend) + 12f * huntBlend
         }
 
         drawArm(
@@ -597,9 +630,9 @@ object GrannyRigAnimator {
             stack.translate(ex, ey, ez)
             drawer.draw(stack.current(), meshes.eyeball, TextureKind.GRANNY_HAIR, 0.92f, 0.88f, 0.84f, 0.45f, 0f, false)
 
-            // Iris / Pupil (turns toward player slightly & glows pale crimson when hostile)
+            // Iris / Pupil (turns toward player + darts nervously; glows pale crimson when hostile)
             stack.push()
-            stack.translate(sin(g.headLookYawDeg * 0.017f) * 0.005f, 0f, 0.015f)
+            stack.translate(sin(g.headLookYawDeg * 0.017f) * 0.005f + g.eyeDartX, g.eyeDartY, 0.015f)
             if (isHostile) {
                 drawer.draw(stack.current(), meshes.irisPupil, TextureKind.LANTERN_CORE, 1.0f, 0.16f, 0.14f, 0.8f, 0.85f, false)
             } else {
@@ -649,7 +682,7 @@ object GrannyRigAnimator {
         stack.rotate(kneeBend, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.shinMesh, TextureKind.GRANNY_SKIN, 0.88f, 0.82f, 0.78f, 0.12f, 0f, false)
 
-        // Foot / Old Victorian Shoe
+        // Modeled Old Victorian Boot
         stack.translate(0f, -0.37f, 0f)
         drawer.draw(stack.current(), meshes.footShoeMesh, TextureKind.METAL_PROP, 0.25f, 0.20f, 0.18f, 0.20f, 0f, false)
         stack.pop()
@@ -670,17 +703,17 @@ object GrannyRigAnimator {
         stack.rotate(shoulderPitch, 1f, 0f, 0f)
         stack.rotate(shoulderRoll, 0f, 0f, 1f)
 
-        // Shoulder joint & Upper Arm Sleeve
+        // Shoulder joint, Upper Arm Sleeve & Elbow Cloth Cuff
         drawer.draw(stack.current(), meshes.jointSphere, clothTex, 1f, 1f, 1f, 0.08f, 0f, false)
         drawer.draw(stack.current(), meshes.upperArm, clothTex, 1f, 1f, 1f, 0.08f, 0f, false)
 
-        // Elbow -> Forearm
         stack.translate(0f, -0.27f, 0f)
+        drawer.draw(stack.current(), meshes.sleeveCuff, clothTex, 0.94f, 0.92f, 0.94f, 0.08f, 0f, false)
         drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.94f, 0.90f, 0.88f, 0.12f, 0f, false)
         stack.rotate(elbowFlex, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.forearm, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
 
-        // Hand & Clawed Fingers
+        // Hand & 2-Joint Articulated Clawed Fingers
         stack.translate(0f, -0.25f, 0f)
         drawer.draw(stack.current(), meshes.palmMesh, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
         drawArticulatedFingers(meshes, sideSign, curlDeg = 28f, skinTex = skinTex, drawer = drawer)
@@ -694,21 +727,27 @@ object GrannyRigAnimator {
         skinTex: TextureKind,
         drawer: RigDrawCallback<M>,
     ) {
-        // 4 fingers
+        // 4 fingers with proximal + bent distal phalanges
         for (i in 0 until 4) {
             val spreadX = (i - 1.5f) * 0.017f
             stack.push()
-            stack.translate(spreadX, -0.075f, 0.004f)
+            stack.translate(spreadX, -0.072f, 0.004f)
             stack.rotate(-curlDeg, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.fingerMesh, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+            stack.translate(0f, -0.036f, 0f)
+            stack.rotate(-curlDeg * 0.85f, 1f, 0f, 0f)
+            drawer.draw(stack.current(), meshes.distalFinger, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
             stack.pop()
         }
-        // Thumb
+        // Articulated Thumb (proximal + distal tip)
         stack.push()
         stack.translate(-sideSign * 0.032f, -0.035f, 0.015f)
         stack.rotate(-sideSign * 35f, 0f, 0f, 1f)
         stack.rotate(-curlDeg * 0.7f, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.fingerMesh, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+        stack.translate(0f, -0.034f, 0f)
+        stack.rotate(-curlDeg * 0.55f, 1f, 0f, 0f)
+        drawer.draw(stack.current(), meshes.distalFinger, skinTex, 0.94f, 0.89f, 0.87f, 0.12f, 0f, false)
         stack.pop()
     }
 }
@@ -783,11 +822,15 @@ object PlayerRigAnimator {
             stack.pop()
         }
 
-        // Player Torso Jacket (head/neck omitted so camera never clips inside skull!)
+        // Player Torso Jacket & Collar (head/neck omitted so camera never clips inside skull!)
         stack.push()
         stack.translate(0f, 0.02f, 0f)
         stack.rotate(crouch * 16f + speedNorm * 6f, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.torsoPlayer, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
+        stack.push()
+        stack.translate(0f, 0.51f, 0f)
+        drawer.draw(stack.current(), meshes.jacketCollar, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
+        stack.pop()
         stack.pop()
 
         stack.pop() // Pelvis
@@ -800,10 +843,11 @@ object PlayerRigAnimator {
         camY: Float,
         camZ: Float,
         drawer: MeshDrawCallback,
+        armTuckFrac: Float = 0f,
     ) {
-        drawFirstPersonArmsGeneric(engine, meshes, camX, camY, camZ) { mat, mesh, tex, r, g, b, spec, emit, ds ->
+        drawFirstPersonArmsGeneric(engine, meshes, camX, camY, camZ, { mat, mesh, tex, r, g, b, spec, emit, ds ->
             drawer.draw(mat, mesh, tex, r, g, b, spec, emit, ds)
-        }
+        }, armTuckFrac = armTuckFrac)
     }
 
     fun <M> drawFirstPersonArmsGeneric(
@@ -813,6 +857,7 @@ object PlayerRigAnimator {
         camY: Float,
         camZ: Float,
         drawer: RigDrawCallback<M>,
+        armTuckFrac: Float = 0f,
     ) {
         if (engine.isHiding) return
 
@@ -820,11 +865,14 @@ object PlayerRigAnimator {
         val stride = sin(engine.playerWalkCycle) * engine.playerMoveSpeedNorm
         val strideCos = cos(engine.playerWalkCycle) * engine.playerMoveSpeedNorm
         val interactArc = sin(engine.interactAnimTimer.coerceIn(0f, 1f) * PI.toFloat())
+        val tuck = armTuckFrac.coerceIn(0f, 1f)
+        val tuckZ = -tuck * 0.16f
+        val tuckY = -tuck * 0.06f
 
         val yawDeg = engine.playerYawRad * (180f / PI.toFloat())
         val pitchDeg = engine.playerPitchRad * (180f / PI.toFloat())
 
-        // Anchor arms in camera view space so they always match look pitch & yaw smoothly!
+        // Anchor arms in camera view space so they always match look pitch & yaw without clipping into close walls!
         stack.resetIdentity()
         stack.translate(camX, camY, camZ)
         stack.rotate(yawDeg, 0f, 1f, 0f)
@@ -836,19 +884,20 @@ object PlayerRigAnimator {
             val bobX = strideCos * 0.012f
             val bobY = kotlin.math.abs(stride) * -0.016f + breath * 0.005f
             // Position right shoulder & extend forearm forward into bottom-right view
-            stack.translate(-0.20f + bobX, -0.20f + bobY, 0.05f)
-            stack.rotate(-72f + breath * 1.5f + stride * 6f, 1f, 0f, 0f)
+            stack.translate(-0.20f + bobX + tuck * 0.02f, -0.20f + bobY + tuckY, 0.05f + tuckZ)
+            stack.rotate(-72f + tuck * 20f + breath * 1.5f + stride * 6f, 1f, 0f, 0f)
             stack.rotate(-12f, 0f, 1f, 0f)
             drawer.draw(stack.current(), meshes.upperArm, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
 
             stack.translate(0f, -0.26f, 0f)
-            stack.rotate(-34f, 1f, 0f, 0f)
+            drawer.draw(stack.current(), meshes.sleeveCuff, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
+            stack.rotate(-34f - tuck * 18f, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.forearm, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
 
             stack.translate(0f, -0.24f, 0f)
             stack.rotate(14f, 0f, 0f, 1f)
             drawer.draw(stack.current(), meshes.palmMesh, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
-            drawFirstPersonFingers(meshes, sideSign = -1f, curlDeg = 58f, drawer = drawer)
+            drawFirstPersonFingers(meshes, sideSign = -1f, curlDeg = 56f, drawer = drawer)
 
             // Tactical Flashlight gripped cleanly inside right hand pointing forward (+Z in camera)
             stack.push()
@@ -861,11 +910,12 @@ object PlayerRigAnimator {
         } else {
             // Unarmed right arm visible at lower-right periphery with walk swing & breathing
             val swing = -stride * 22f
-            stack.translate(-0.22f, -0.24f + breath * 0.005f, -0.04f)
-            stack.rotate(-28f + swing, 1f, 0f, 0f)
+            stack.translate(-0.22f, -0.24f + breath * 0.005f + tuckY, -0.04f + tuckZ)
+            stack.rotate(-28f + swing + tuck * 16f, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.upperArm, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
             stack.translate(0f, -0.26f, 0f)
-            stack.rotate(-38f, 1f, 0f, 0f)
+            drawer.draw(stack.current(), meshes.sleeveCuff, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
+            stack.rotate(-38f - tuck * 16f, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.forearm, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
             stack.translate(0f, -0.24f, 0f)
             drawer.draw(stack.current(), meshes.palmMesh, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
@@ -875,16 +925,17 @@ object PlayerRigAnimator {
 
         // 2. LEFT ARM (Swings naturally on walk/run & reaches forward physically when interacting!)
         stack.push()
-        val leftReachFwd = interactArc * 0.24f
+        val leftReachFwd = interactArc * 0.24f * (1f - tuck * 0.7f)
         val leftLiftY = interactArc * 0.09f
-        val leftPitch = -32f + stride * 24f - interactArc * 68f
-        val leftElbow = -36f + interactArc * 26f
-        stack.translate(0.22f - interactArc * 0.09f, -0.24f + leftLiftY + breath * 0.005f, -0.03f + leftReachFwd)
+        val leftPitch = -32f + stride * 24f - interactArc * 68f + tuck * 16f
+        val leftElbow = -36f + interactArc * 26f - tuck * 14f
+        stack.translate(0.22f - interactArc * 0.09f, -0.24f + leftLiftY + breath * 0.005f + tuckY, -0.03f + leftReachFwd + tuckZ)
         stack.rotate(leftPitch, 1f, 0f, 0f)
         stack.rotate(10f - interactArc * 16f, 0f, 1f, 0f)
         drawer.draw(stack.current(), meshes.upperArm, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
 
         stack.translate(0f, -0.26f, 0f)
+        drawer.draw(stack.current(), meshes.sleeveCuff, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
         stack.rotate(leftElbow, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.forearm, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
 
@@ -903,9 +954,12 @@ object PlayerRigAnimator {
         for (i in 0 until 4) {
             val spreadX = (i - 1.5f) * 0.017f
             stack.push()
-            stack.translate(spreadX, -0.075f, 0.004f)
+            stack.translate(spreadX, -0.072f, 0.004f)
             stack.rotate(-curlDeg, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.fingerMesh, TextureKind.PLAYER_SKIN, 0.96f, 0.92f, 0.90f, 0.14f, 0f, false)
+            stack.translate(0f, -0.035f, 0f)
+            stack.rotate(-curlDeg * 0.85f, 1f, 0f, 0f)
+            drawer.draw(stack.current(), meshes.distalFinger, TextureKind.PLAYER_SKIN, 0.94f, 0.88f, 0.86f, 0.14f, 0f, false)
             stack.pop()
         }
         stack.push()
@@ -913,6 +967,9 @@ object PlayerRigAnimator {
         stack.rotate(-sideSign * 35f, 0f, 0f, 1f)
         stack.rotate(-curlDeg * 0.7f, 1f, 0f, 0f)
         drawer.draw(stack.current(), meshes.fingerMesh, TextureKind.PLAYER_SKIN, 0.96f, 0.92f, 0.90f, 0.14f, 0f, false)
+        stack.translate(0f, -0.033f, 0f)
+        stack.rotate(-curlDeg * 0.55f, 1f, 0f, 0f)
+        drawer.draw(stack.current(), meshes.distalFinger, TextureKind.PLAYER_SKIN, 0.94f, 0.88f, 0.86f, 0.14f, 0f, false)
         stack.pop()
     }
 
@@ -1036,14 +1093,15 @@ object PlayerRigAnimator {
             stack.pop()
         }
 
-        // 2. Torso Jacket
+        // 2. Torso Jacket + Collar
         stack.push()
         stack.translate(0f, 0.02f, breath)
         drawer.draw(stack.current(), meshes.torsoPlayer, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
 
-        // 3. Neck & Full Sculpted Young-Man Head + Expressive Eyes & Speech Jaw
+        // 3. Collar, Neck & Full Sculpted Young-Man Head + Expressive Eyes & Speech Jaw
         stack.push()
         stack.translate(0f, 0.51f, 0f)
+        drawer.draw(stack.current(), meshes.jacketCollar, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
         drawer.draw(stack.current(), meshes.neckMesh, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.14f, 0f, false)
 
         stack.push()
@@ -1109,6 +1167,7 @@ object PlayerRigAnimator {
             drawer.draw(stack.current(), meshes.upperArm, TextureKind.PLAYER_JACKET, 1f, 1f, 1f, 0.14f, 0f, false)
 
             stack.translate(0f, -0.26f, 0f)
+            drawer.draw(stack.current(), meshes.sleeveCuff, TextureKind.PLAYER_JACKET, 0.92f, 0.94f, 0.96f, 0.12f, 0f, false)
             drawer.draw(stack.current(), meshes.jointSphere, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.14f, 0f, false)
             stack.rotate(elbowFlexDeg, 1f, 0f, 0f)
             drawer.draw(stack.current(), meshes.forearm, TextureKind.PLAYER_SKIN, 1f, 1f, 1f, 0.16f, 0f, false)
