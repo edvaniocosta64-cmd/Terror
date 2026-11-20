@@ -275,6 +275,7 @@ private fun AuthenticatedAppRoot(
             onSfxVolumeChange = viewModel::setSfxVolume,
             onShowFpsChange = viewModel::setShowFpsHud,
             onInvertYChange = viewModel::setInvertY,
+            onSelectRenderBackend = viewModel::setRenderBackend,
             onBack = {
                 if (openedFromGame.value) {
                     viewModel.gameEngine.isPaused = false

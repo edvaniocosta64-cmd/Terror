@@ -1,7 +1,6 @@
 package com.example.engine3d
 
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.opengl.GLES20
 import android.opengl.GLUtils
 import kotlin.math.PI
@@ -82,7 +81,7 @@ class TextureAtlasSet {
 
 object ProceduralTextures3D {
 
-    fun generateBitmap(kind: TextureKind, size: Int = 256): Bitmap {
+    fun generatePixels(kind: TextureKind, size: Int = 256): IntArray {
         val pixels = IntArray(size * size)
         val inv = 1f / size.toFloat()
 
@@ -93,6 +92,11 @@ object ProceduralTextures3D {
                 pixels[y * size + x] = samplePixel(kind, u, v, x, y, size)
             }
         }
+        return pixels
+    }
+
+    fun generateBitmap(kind: TextureKind, size: Int = 256): Bitmap {
+        val pixels = generatePixels(kind, size)
         return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
     }
 
@@ -468,6 +472,6 @@ object ProceduralTextures3D {
         val ir = (r.coerceIn(0f, 1f) * 255f).toInt()
         val ig = (g.coerceIn(0f, 1f) * 255f).toInt()
         val ib = (b.coerceIn(0f, 1f) * 255f).toInt()
-        return Color.argb(ia, ir, ig, ib)
+        return (ia shl 24) or (ir shl 16) or (ig shl 8) or ib
     }
 }

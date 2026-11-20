@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.GameSettings
 import com.example.data.StoryPhase
@@ -242,5 +243,51 @@ class ExampleRobolectricTest {
 
         audio.release()
         org.junit.Assert.assertTrue(audio.isEngineReleased())
+    }
+
+    @Test
+    fun `settings screen shows Filament PBR default and OpenGL ES 2 fallback backend chips`() {
+        assertEquals(com.example.data.RenderBackend.FILAMENT, GameSettings().renderBackend)
+        assertEquals(com.example.data.RenderBackend.OPENGL_ES2, com.example.data.RenderBackend.fromName("OPENGL_ES2"))
+        assertEquals(com.example.data.RenderBackend.FILAMENT, com.example.data.RenderBackend.fromName("UNKNOWN"))
+
+        composeTestRule.setContent {
+            ProjectDarknessTheme {
+                SettingsScreen(
+                    settings = GameSettings(),
+                    deviceMaxRefreshHz = 90,
+                    onSelectFps = {},
+                    onSelectQuality = {},
+                    onSensitivityChange = {},
+                    onMasterVolumeChange = {},
+                    onAmbientVolumeChange = {},
+                    onSfxVolumeChange = {},
+                    onShowFpsChange = {},
+                    onInvertYChange = {},
+                    onSelectRenderBackend = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("backend_chip_filament")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag("backend_chip_opengl_es2")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `packaged glb character assets exist in APK assets and have valid glTF 2 binary headers`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        for (assetPath in listOf("models/granny.glb", "models/protagonist.glb")) {
+            val bytes = context.assets.open(assetPath).use { it.readBytes() }
+            org.junit.Assert.assertTrue("$assetPath must be larger than 50KB", bytes.size > 50_000)
+            val magic = String(bytes, 0, 4, Charsets.US_ASCII)
+            assertEquals("glTF", magic)
+            val version = java.nio.ByteBuffer.wrap(bytes, 4, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            assertEquals(2, version)
+        }
     }
 }

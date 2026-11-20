@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.GameSettings
 import com.example.data.QualityPreference
+import com.example.data.RenderBackend
 import com.example.data.TargetFpsMode
 import com.example.ui.theme.BoneParchment
 import com.example.ui.theme.CrimsonBlood
@@ -62,6 +63,7 @@ fun SettingsScreen(
     onSfxVolumeChange: (Float) -> Unit,
     onShowFpsChange: (Boolean) -> Unit,
     onInvertYChange: (Boolean) -> Unit,
+    onSelectRenderBackend: (RenderBackend) -> Unit = {},
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -146,6 +148,31 @@ fun SettingsScreen(
                                 selectedLabelColor = ObsidianVoid,
                             ),
                             modifier = Modifier.testTag("quality_chip_${q.name.lowercase()}"),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Motor Gráfico 3D (PBR / Fallback)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FogMist,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RenderBackend.entries.forEach { backend ->
+                        FilterChip(
+                            selected = settings.renderBackend == backend,
+                            onClick = { onSelectRenderBackend(backend) },
+                            label = { Text(backend.label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CrimsonBlood,
+                                selectedLabelColor = BoneParchment,
+                            ),
+                            modifier = Modifier.testTag("backend_chip_${backend.name.lowercase()}"),
                         )
                     }
                 }

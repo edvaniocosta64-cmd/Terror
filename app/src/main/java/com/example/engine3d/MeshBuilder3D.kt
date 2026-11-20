@@ -224,6 +224,93 @@ class MeshBuilder3D {
     )
 
     /**
+     * Recomputes area-weighted smooth vertex normals across [fromVertex .. currentVertexCount)
+     * from triangles starting at [fromIndex], welding coincidental UV-seam positions so closed
+     * surfaces shade smoothly without seams and sculpted wrinkles/folds catch real light & shadow.
+     */
+    fun recomputeSmoothNormals(fromVertex: Int, fromIndex: Int) {
+        val vCount = currentVertexCount
+        if (vCount <= fromVertex || inds.size <= fromIndex + 2) return
+
+        val backupNormals = FloatArray((vCount - fromVertex) * 3)
+        for (i in fromVertex until vCount) {
+            val vb = i * 8
+            val bi = (i - fromVertex) * 3
+            backupNormals[bi] = verts[vb + 3]
+            backupNormals[bi + 1] = verts[vb + 4]
+            backupNormals[bi + 2] = verts[vb + 5]
+            verts[vb + 3] = 0f
+            verts[vb + 4] = 0f
+            verts[vb + 5] = 0f
+        }
+
+        var idx = fromIndex
+        while (idx + 2 < inds.size) {
+            val ia = inds[idx].toInt() and 0xFFFF
+            val ib = inds[idx + 1].toInt() and 0xFFFF
+            val ic = inds[idx + 2].toInt() and 0xFFFF
+            idx += 3
+            if (ia < fromVertex || ib < fromVertex || ic < fromVertex) continue
+
+            val aBase = ia * 8
+            val bBase = ib * 8
+            val cBase = ic * 8
+            val abx = verts[bBase] - verts[aBase]
+            val aby = verts[bBase + 1] - verts[aBase + 1]
+            val abz = verts[bBase + 2] - verts[aBase + 2]
+            val acx = verts[cBase] - verts[aBase]
+            val acy = verts[cBase + 1] - verts[aBase + 1]
+            val acz = verts[cBase + 2] - verts[aBase + 2]
+
+            val fnx = aby * acz - abz * acy
+            val fny = abz * acx - abx * acz
+            val fnz = abx * acy - aby * acx
+
+            verts[aBase + 3] += fnx; verts[aBase + 4] += fny; verts[aBase + 5] += fnz
+            verts[bBase + 3] += fnx; verts[bBase + 4] += fny; verts[bBase + 5] += fnz
+            verts[cBase + 3] += fnx; verts[cBase + 4] += fny; verts[cBase + 5] += fnz
+        }
+
+        // Weld UV-seam & shared-position vertices using quantized spatial hashing (0.05 mm grid)
+        val seamAccum = HashMap<Long, FloatArray>(vCount - fromVertex)
+        fun posKey(x: Float, y: Float, z: Float): Long {
+            val qx = kotlin.math.round(x * 20000f).toLong() and 0x1FFFFFL
+            val qy = kotlin.math.round(y * 20000f).toLong() and 0x1FFFFFL
+            val qz = kotlin.math.round(z * 20000f).toLong() and 0x1FFFFFL
+            return (qx shl 42) or (qy shl 21) or qz
+        }
+
+        for (i in fromVertex until vCount) {
+            val vb = i * 8
+            val key = posKey(verts[vb], verts[vb + 1], verts[vb + 2])
+            val acc = seamAccum.getOrPut(key) { FloatArray(3) }
+            acc[0] += verts[vb + 3]
+            acc[1] += verts[vb + 4]
+            acc[2] += verts[vb + 5]
+        }
+
+        for (i in fromVertex until vCount) {
+            val vb = i * 8
+            val key = posKey(verts[vb], verts[vb + 1], verts[vb + 2])
+            val acc = seamAccum[key]
+            var nx = acc?.get(0) ?: verts[vb + 3]
+            var ny = acc?.get(1) ?: verts[vb + 4]
+            var nz = acc?.get(2) ?: verts[vb + 5]
+            val len = sqrt(nx * nx + ny * ny + nz * nz)
+            if (len > 1e-6f) {
+                verts[vb + 3] = nx / len
+                verts[vb + 4] = ny / len
+                verts[vb + 5] = nz / len
+            } else {
+                val bi = (i - fromVertex) * 3
+                verts[vb + 3] = backupNormals[bi]
+                verts[vb + 4] = backupNormals[bi + 1]
+                verts[vb + 5] = backupNormals[bi + 2]
+            }
+        }
+    }
+
+    /**
      * Smooth UV-mapped ellipsoid/sphere centered at (cx, cy, cz).
      */
     fun addEllipsoid(
@@ -292,6 +379,7 @@ class MeshBuilder3D {
         gauntness: Float = 0.25f,
     ) {
         val base = currentVertexCount
+        val baseIndex = inds.size
         for (r in 0..rings) {
             val v = r.toFloat() / rings
             val phi = v * PI.toFloat()
@@ -312,9 +400,9 @@ class MeshBuilder3D {
                 // Narrow lower jaw & chin taper
                 if (py < 0f) {
                     val jawT = (-py / ry).coerceIn(0f, 1f)
-                    px *= (1f - 0.34f * jawT * jawT)
+                    px *= (1f - 0.36f * jawT * jawT)
                     if (pz > 0f) {
-                        pz *= (1f - 0.15f * jawT)
+                        pz *= (1f - 0.14f * jawT)
                     }
                 }
                 // Elongate back of cranium & subtle occipital curve
@@ -327,88 +415,96 @@ class MeshBuilder3D {
                     val frontWeight = ((sinTheta - 0.12f) / 0.88f).coerceIn(0f, 1f)
                     val latAbs = abs(cosTheta)
 
-                    // Eye socket hollows around y = +0.015..+0.045, x = +-0.036
-                    val eyeDx = (latAbs - 0.34f) / 0.22f
-                    val eyeDy = (cosPhi - 0.18f) / 0.20f
+                    // Deep sunken eye socket hollows around y = +0.015..+0.045, x = +-0.036
+                    val eyeDx = (latAbs - 0.34f) / 0.21f
+                    val eyeDy = (cosPhi - 0.18f) / 0.19f
                     val eyeDistSq = eyeDx * eyeDx + eyeDy * eyeDy
                     if (eyeDistSq < 1f) {
-                        val hollow = (1f - eyeDistSq) * (0.015f + 0.007f * gauntness)
+                        val hollow = (1f - eyeDistSq) * (0.019f + 0.010f * gauntness)
                         pz -= hollow * frontWeight
                     }
 
-                    // Brow ridge + angry glabella crease between brows
+                    // Prominent brow ridge + stern glabella frown furrow + subtle forehead creases
                     val browDy = (cosPhi - 0.42f) / 0.14f
                     if (browDy * browDy < 1f && latAbs < 0.68f) {
-                        val browBump = (1f - browDy * browDy) * (0.011f + 0.004f * gauntness)
+                        val browBump = (1f - browDy * browDy) * (0.013f + 0.005f * gauntness)
                         pz += browBump * frontWeight
                     }
-                    if (latAbs < 0.14f && browDy * browDy < 1f) {
-                        pz -= (1f - latAbs / 0.14f) * 0.005f * gauntness * frontWeight
+                    if (latAbs < 0.13f && browDy * browDy < 1f) {
+                        pz -= (1f - latAbs / 0.13f) * 0.007f * gauntness * frontWeight
+                    }
+                    if (cosPhi in 0.48f..0.76f && latAbs < 0.52f && gauntness > 0.3f) {
+                        val fFade = (1f - latAbs / 0.52f)
+                        pz += sin(cosPhi * 54f) * 0.0014f * gauntness * fFade * frontWeight
                     }
 
-                    // Nose bridge, tip & flared nostrils (alae)
-                    val noseLat = (latAbs / 0.19f)
+                    // Aquiline nose bridge, tip & flared nostrils (alae)
+                    val noseLat = (latAbs / 0.165f)
                     val noseVert = ((cosPhi - 0.02f) / 0.26f)
                     if (noseLat < 1f && noseVert > -1f && noseVert < 1f) {
                         val nProfile = (1f - noseLat * noseLat) * (1f - noseVert * noseVert)
-                        val tipBoost = if (cosPhi < 0.04f) 1.42f else 0.78f
-                        pz += nProfile * 0.030f * tipBoost * frontWeight
+                        val tipBoost = if (cosPhi < 0.04f) 1.48f else 0.82f
+                        pz += nProfile * 0.033f * tipBoost * frontWeight
                     }
-                    // Nostrils flare around cosPhi ~ -0.14, latAbs ~ 0.13..0.24
-                    val alaeDx = (latAbs - 0.16f) / 0.09f
+                    // Nostrils flare around cosPhi ~ -0.14, latAbs ~ 0.12..0.22
+                    val alaeDx = (latAbs - 0.15f) / 0.085f
                     val alaeDy = (cosPhi + 0.13f) / 0.08f
                     if (alaeDx * alaeDx + alaeDy * alaeDy < 1f) {
-                        val alaeBump = (1f - (alaeDx * alaeDx + alaeDy * alaeDy)) * 0.008f
+                        val alaeBump = (1f - (alaeDx * alaeDx + alaeDy * alaeDy)) * 0.009f
                         pz += alaeBump * frontWeight
                     }
 
-                    // Cheekbones + sunken gaunt cheeks & deep nasolabial folds for elderly realism
-                    val cheekDx = (latAbs - 0.48f) / 0.24f
-                    val cheekDy = (cosPhi + 0.12f) / 0.17f
+                    // Cheekbones + deeply sunken gaunt cheeks & crisp nasolabial folds
+                    val cheekDx = (latAbs - 0.47f) / 0.23f
+                    val cheekDy = (cosPhi + 0.11f) / 0.16f
                     if (cheekDx * cheekDx + cheekDy * cheekDy < 1f) {
-                        pz += (1f - (cheekDx * cheekDx + cheekDy * cheekDy)) * (0.012f + 0.004f * gauntness) * frontWeight
+                        pz += (1f - (cheekDx * cheekDx + cheekDy * cheekDy)) * (0.014f + 0.006f * gauntness) * frontWeight
                     }
                     val hollowCheekDy = (cosPhi + 0.34f) / 0.18f
                     if (cheekDx * cheekDx + hollowCheekDy * hollowCheekDy < 1f) {
                         val cHollow = (1f - hollowCheekDy * hollowCheekDy) * (1f - (cheekDx * cheekDx))
-                        px *= (1f - 0.17f * gauntness * cHollow)
-                        pz -= 0.006f * gauntness * cHollow * frontWeight
+                        px *= (1f - 0.20f * gauntness * cHollow)
+                        pz -= 0.009f * gauntness * cHollow * frontWeight
                     }
 
                     // Nasolabial fold crease running diagonally from nose wings to mouth corners
-                    if (cosPhi in -0.52f..-0.12f) {
-                        val expectedLat = 0.16f + ((-0.12f - cosPhi) / 0.40f) * 0.14f
-                        val foldDist = abs(latAbs - expectedLat) / 0.065f
+                    if (cosPhi in -0.54f..-0.12f) {
+                        val expectedLat = 0.15f + ((-0.12f - cosPhi) / 0.42f) * 0.14f
+                        val foldDist = abs(latAbs - expectedLat) / 0.062f
                         if (foldDist < 1f) {
-                            pz -= (1f - foldDist * foldDist) * (0.003f + 0.005f * gauntness) * frontWeight
+                            pz -= (1f - foldDist * foldDist) * (0.004f + 0.006f * gauntness) * frontWeight
                         }
                     }
 
-                    // Upper & lower lips + parted mouth line at cosPhi ~ -0.39
-                    if (latAbs < 0.28f) {
-                        val lipArch = 1f - (latAbs / 0.28f) * (latAbs / 0.28f)
-                        val upperLipDy = (cosPhi + 0.34f) / 0.055f
-                        val lowerLipDy = (cosPhi + 0.44f) / 0.055f
-                        val mouthSlitDy = (cosPhi + 0.39f) / 0.032f
+                    // Upper & lower lips + deep parted mouth line at cosPhi ~ -0.39
+                    if (latAbs < 0.27f) {
+                        val lipArch = 1f - (latAbs / 0.27f) * (latAbs / 0.27f)
+                        val upperLipDy = (cosPhi + 0.34f) / 0.052f
+                        val lowerLipDy = (cosPhi + 0.45f) / 0.052f
+                        val mouthSlitDy = (cosPhi + 0.395f) / 0.036f
                         if (upperLipDy * upperLipDy < 1f) {
-                            pz += (1f - upperLipDy * upperLipDy) * 0.007f * lipArch * frontWeight
+                            pz += (1f - upperLipDy * upperLipDy) * 0.008f * lipArch * frontWeight
                         }
                         if (lowerLipDy * lowerLipDy < 1f) {
-                            pz += (1f - lowerLipDy * lowerLipDy) * 0.006f * lipArch * frontWeight
+                            pz += (1f - lowerLipDy * lowerLipDy) * 0.007f * lipArch * frontWeight
                         }
                         if (mouthSlitDy * mouthSlitDy < 1f) {
-                            pz -= (1f - mouthSlitDy * mouthSlitDy) * 0.006f * lipArch * frontWeight
+                            pz -= (1f - mouthSlitDy * mouthSlitDy) * 0.011f * lipArch * frontWeight
                         }
                     }
 
-                    // Chin prominence
+                    // Mentolabial crease & chin prominence
+                    val chinCreaseDy = (cosPhi + 0.56f) / 0.06f
+                    if (chinCreaseDy * chinCreaseDy < 1f && latAbs < 0.26f) {
+                        pz -= (1f - chinCreaseDy * chinCreaseDy) * (1f - latAbs / 0.26f) * 0.005f * frontWeight
+                    }
                     val chinDy = (cosPhi + 0.72f) / 0.18f
-                    if (chinDy * chinDy < 1f && latAbs < 0.35f) {
-                        pz += (1f - chinDy * chinDy) * 0.011f * frontWeight
+                    if (chinDy * chinDy < 1f && latAbs < 0.34f) {
+                        pz += (1f - chinDy * chinDy) * 0.013f * frontWeight
                     }
                 }
 
-                // Approximate smooth outward normal
+                // Initial outward normal (refined below via triangle area-weighted smooth normals)
                 val nx = px / rx.coerceAtLeast(0.001f)
                 val ny = py / ry.coerceAtLeast(0.001f)
                 val nz = pz / rz.coerceAtLeast(0.001f)
@@ -427,6 +523,8 @@ class MeshBuilder3D {
                 addTriangle(i0, i2, i3)
             }
         }
+
+        recomputeSmoothNormals(base, baseIndex)
 
         // Add subtle sculpted left & right ears along the head sides
         for (side in listOf(-1f, 1f)) {
@@ -531,6 +629,7 @@ class MeshBuilder3D {
             Triple(1.00f, shoulderRx * 0.36f, shoulderRz * 0.52f),
         )
         val base = currentVertexCount
+        val baseIndex = inds.size
         val h = yTop - yBottom
         for (spec in profile) {
             val t = spec.first
@@ -569,6 +668,7 @@ class MeshBuilder3D {
         for (s in 0 until sectors) {
             addTriangle(botCenter, base + s, base + s + 1)
         }
+        recomputeSmoothNormals(base, baseIndex)
     }
 
     /**
@@ -585,6 +685,7 @@ class MeshBuilder3D {
         sectors: Int = 28,
     ) {
         val base = currentVertexCount
+        val baseIndex = inds.size
         val h = yTop - yBottom
         for (r in 0..rings) {
             val t = r.toFloat() / rings // 0 = hem, 1 = waist
@@ -596,7 +697,7 @@ class MeshBuilder3D {
                 val u = s.toFloat() / sectors
                 val theta = u * (2f * PI.toFloat())
                 // Organic multi-frequency fabric pleats & ragged hemline
-                val fold = 1f + flare * (0.09f * sin(theta * 7f) + 0.04f * cos(theta * 13f))
+                val fold = 1f + flare * (0.095f * sin(theta * 7f) + 0.042f * cos(theta * 13f))
                 val tatter = if (r == 0) (sin(theta * 9f) * 0.028f + cos(theta * 15f) * 0.012f) else 0f
                 val x = cos(theta) * rx * fold
                 val z = sin(theta) * rz * fold
@@ -614,6 +715,7 @@ class MeshBuilder3D {
                 addTriangle(i0, i3, i2)
             }
         }
+        recomputeSmoothNormals(base, baseIndex)
     }
 
     /**
@@ -641,6 +743,7 @@ class MeshBuilder3D {
         sectors: Int = 32,
     ) {
         val base = currentVertexCount
+        val baseIndex = inds.size
         for (r in 0..rings) {
             val v = r.toFloat() / rings // 0 = crown apex, 1 = hairline/nape edge
             for (s in 0..sectors) {
@@ -652,11 +755,11 @@ class MeshBuilder3D {
 
                 val frontFactor = sinTheta.coerceAtLeast(0f)
                 val backFactor = (-sinTheta).coerceAtLeast(0f)
-                val centerPeak = kotlin.math.exp(-(cosTheta * cosTheta) / 0.08f) * (0.042f * PI.toFloat()) * frontFactor
-                val phiMax = (0.54f * PI.toFloat()) +
-                    backFactor * (0.20f * PI.toFloat()) -
-                    frontFactor * (0.24f * PI.toFloat()) +
-                    latAbs * (0.04f * PI.toFloat()) +
+                val centerPeak = kotlin.math.exp(-(cosTheta * cosTheta) / 0.08f) * (0.036f * PI.toFloat()) * frontFactor
+                val phiMax = (0.55f * PI.toFloat()) +
+                    backFactor * (0.21f * PI.toFloat()) -
+                    frontFactor * (0.20f * PI.toFloat()) +
+                    latAbs * (0.045f * PI.toFloat()) +
                     centerPeak
 
                 val phi = v * phiMax
@@ -664,14 +767,14 @@ class MeshBuilder3D {
                 val cosPhi = cos(phi)
 
                 // Hair volume loft above skull, tapering smoothly at hairline edge (v -> 1)
-                val edgeTaper = 1f - v * v * v * 0.72f
+                val edgeTaper = 1f - v * v * v * 0.74f
                 val midLoft = sin(v * PI.toFloat()).coerceAtLeast(0f)
                 val partGroove = if (sinTheta > -0.25f) {
-                    kotlin.math.exp(-(cosTheta * cosTheta) / 0.016f) * 0.0042f * (1f - v * 0.55f)
+                    kotlin.math.exp(-(cosTheta * cosTheta) / 0.015f) * 0.0068f * (1f - v * 0.45f)
                 } else 0f
-                val sideSwell = kotlin.math.exp(-((latAbs - 0.36f) * (latAbs - 0.36f)) / 0.06f) * 0.0048f * midLoft
-                val waveRipple = sin(theta * 18f + v * 3.2f) * 0.0022f * midLoft
-                val loft = (0.0025f + 0.0115f * midLoft + 0.0045f * (1f - v) + 0.0035f * backFactor * midLoft + sideSwell + waveRipple - partGroove) * edgeTaper
+                val sideSwell = kotlin.math.exp(-((latAbs - 0.38f) * (latAbs - 0.38f)) / 0.06f) * 0.0056f * midLoft
+                val waveRipple = sin(theta * 20f + v * 3.6f) * 0.0036f * midLoft
+                val loft = (0.0025f + 0.0125f * midLoft + 0.0045f * (1f - v) + 0.0042f * backFactor * midLoft + sideSwell + waveRipple - partGroove) * edgeTaper
 
                 var px = sinPhi * cosTheta * (rx + loft)
                 var py = cosPhi * (ry + loft * 0.92f)
@@ -688,7 +791,7 @@ class MeshBuilder3D {
                 val nx = px / (rx + 0.01f)
                 val ny = py / (ry + 0.01f)
                 val nz = pz / (rz + 0.01f)
-                addVertex(px, py, pz, nx, ny, nz, u * 2.2f, v)
+                addVertex(px, py, pz, nx, ny, nz, u * 2.4f, v)
             }
         }
         val stride = sectors + 1
@@ -702,9 +805,11 @@ class MeshBuilder3D {
                 addTriangle(i0, i2, i3)
             }
         }
+        recomputeSmoothNormals(base, baseIndex)
 
         // Sculpted braided/coiled bun tucked snugly against the back of the head (replaces spherical lump)
         val bunBase = currentVertexCount
+        val bunBaseIndex = inds.size
         val bunRings = 14
         val bunSectors = 22
         val bunCenterY = 0.012f
@@ -723,7 +828,7 @@ class MeshBuilder3D {
                 val cosTheta = cos(theta)
                 val sinTheta = sin(theta)
 
-                val braidTwist = 1f + 0.14f * sin(theta * 3f + phi * 2f)
+                val braidTwist = 1f + 0.18f * sin(theta * 3f + phi * 2f)
                 val majorRx = 0.044f
                 val majorRy = 0.036f
                 val tubeR = 0.024f * braidTwist
@@ -751,6 +856,7 @@ class MeshBuilder3D {
                 addTriangle(i0, i2, i3)
             }
         }
+        recomputeSmoothNormals(bunBase, bunBaseIndex)
         // Core dome inside coil center so the bun has zero hollow gap
         addEllipsoid(cx = 0f, cy = bunCenterY + 0.002f, cz = bunCenterZ + 0.012f, rx = 0.044f, ry = 0.038f, rz = 0.028f, rings = 8, sectors = 12)
     }
@@ -765,22 +871,23 @@ class MeshBuilder3D {
         sectors: Int = 10,
     ) {
         val base = currentVertexCount
+        val baseIndex = inds.size
         val h = yTop - yBottom
         for (r in 0..rings) {
             val t = r.toFloat() / rings // 0 = bottom tip, 1 = root
             val y = yBottom + t * h
             val taper = sin((t * 0.88f + 0.12f) * PI.toFloat() * 0.5f)
-            val rx = 0.0045f + 0.0155f * taper
-            val rz = 0.0055f + 0.0185f * taper
-            // Gentle S-curve drape outward around cheek/temple and back toward nape
-            val swayX = sin((1f - t) * PI.toFloat()) * 0.008f
-            val swayZ = sin((1f - t) * PI.toFloat() * 1.4f) * 0.010f - (1f - t) * (1f - t) * 0.018f
+            val rx = 0.0040f + 0.0145f * taper
+            val rz = 0.0050f + 0.0175f * taper
+            // Subtle S-curve hugging inward along cheek/jaw toward neck
+            val swayX = -sin((1f - t) * PI.toFloat()) * 0.005f
+            val swayZ = sin((1f - t) * PI.toFloat() * 1.3f) * 0.008f - (1f - t) * (1f - t) * 0.018f
             for (s in 0..sectors) {
                 val u = s.toFloat() / sectors
                 val theta = u * (2f * PI.toFloat())
                 val ct = cos(theta)
                 val st = sin(theta)
-                val strandRib = 1f + 0.14f * sin(theta * 3f + t * 4f)
+                val strandRib = 1f + 0.18f * sin(theta * 3f + t * 4f)
                 val x = swayX + ct * rx * strandRib
                 val z = swayZ + st * rz * strandRib
                 addVertex(x, y, z, ct, 0.12f, st, u * 1.4f, t)
@@ -806,6 +913,7 @@ class MeshBuilder3D {
         for (s in 0 until sectors) {
             addTriangle(botCenter, base + s, base + s + 1)
         }
+        recomputeSmoothNormals(base, baseIndex)
     }
 
     /**
@@ -823,6 +931,7 @@ class MeshBuilder3D {
             Triple(-0.080f, 0.031f, 0.011f),
         )
         val base = currentVertexCount
+        val baseIndex = inds.size
         val sectors = 16
         for (r in profile.indices) {
             val (y, rx, rz) = profile[r]
@@ -834,7 +943,7 @@ class MeshBuilder3D {
                 val st = sin(theta) // +1 palm inside (+Z), -1 dorsal back (-Z)
                 // Gentle palmar cup (+Z) and bony dorsal tendons (-Z)
                 val palmCup = if (st > 0.25f && t in 0.25f..0.85f) 1f - 0.18f * st * sin(t * PI.toFloat()) else 1f
-                val tendonRidge = if (st < -0.35f && t in 0.2f..0.85f) 1f + 0.07f * sin(ct * 4f * PI.toFloat()) else 1f
+                val tendonRidge = if (st < -0.35f && t in 0.2f..0.85f) 1f + 0.09f * sin(ct * 4f * PI.toFloat()) else 1f
                 // Slight arch across knuckle line
                 val archY = if (t > 0.65f) (1f - ct * ct) * -0.003f else 0f
                 val x = ct * rx
@@ -862,6 +971,7 @@ class MeshBuilder3D {
         for (s in 0 until sectors) {
             addTriangle(botCenter, botRing + s + 1, botRing + s)
         }
+        recomputeSmoothNormals(base, baseIndex)
     }
 
     /**

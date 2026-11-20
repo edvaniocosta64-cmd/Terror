@@ -4,6 +4,7 @@ import android.opengl.GLSurfaceView
 import android.os.Build
 import android.view.Surface
 import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -22,7 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,13 +38,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.GameSettings
+import com.example.data.RenderBackend
 import com.example.engine3d.AutoQualityController
+import com.example.engine3d.HorrorFilamentRenderer
 import com.example.engine3d.HorrorGameEngine
 import com.example.engine3d.HorrorGlRenderer
 import com.example.engine3d.InteractionPrompt
 import com.example.engine3d.PerformanceTelemetry
 import com.example.engine3d.QualityTier
-import com.example.ui.theme.BoneParchment
 import com.example.ui.theme.LanternAmber
 import com.example.ui.theme.ObsidianSurface
 import kotlinx.coroutines.delay
@@ -66,7 +68,14 @@ fun GameScreen(
 
     var isPauseOpen by remember { mutableStateOf(false) }
     var hud by remember { mutableStateOf(gameEngine.hudSnapshot()) }
+    var effectiveBackend by remember { mutableStateOf(settings.renderBackend) }
+    var activeSurfaceView by remember { mutableStateOf<SurfaceView?>(null) }
     var activeGlView by remember { mutableStateOf<GLSurfaceView?>(null) }
+    var activeFilamentRenderer by remember { mutableStateOf<HorrorFilamentRenderer?>(null) }
+
+    LaunchedEffect(settings.renderBackend) {
+        effectiveBackend = settings.renderBackend
+    }
 
     BackHandler {
         if (hud.activeNoteTitle != null) {
@@ -78,11 +87,11 @@ fun GameScreen(
     }
 
     // Apply Android 11+ hardware frame rate hint & dynamic render scale whenever target/quality changes
-    LaunchedEffect(activeGlView, settings.targetFpsMode, settings.qualityPreference) {
-        val glView = activeGlView ?: return@LaunchedEffect
-        glView.post {
+    LaunchedEffect(activeSurfaceView, settings.targetFpsMode, settings.qualityPreference, effectiveBackend) {
+        val sv = activeSurfaceView ?: return@LaunchedEffect
+        sv.post {
             applySurfaceRateAndScale(
-                glView = glView,
+                surfaceView = sv,
                 targetFps = performanceManager.effectiveTargetFps(),
                 tier = performanceManager.activeTier,
             )
@@ -97,11 +106,17 @@ fun GameScreen(
         }
     }
 
-    DisposableEffect(lifecycleOwner, activeGlView) {
+    DisposableEffect(lifecycleOwner, activeGlView, activeFilamentRenderer) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> activeGlView?.onResume()
-                Lifecycle.Event.ON_PAUSE -> activeGlView?.onPause()
+                Lifecycle.Event.ON_RESUME -> {
+                    activeGlView?.onResume()
+                    activeFilamentRenderer?.onResume()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    activeGlView?.onPause()
+                    activeFilamentRenderer?.onPause()
+                }
                 else -> Unit
             }
         }
@@ -109,52 +124,116 @@ fun GameScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             activeGlView?.onPause()
+            activeFilamentRenderer?.onPause()
+            activeFilamentRenderer?.destroy()
+            activeFilamentRenderer = null
+            activeGlView = null
+            activeSurfaceView = null
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // True OpenGL ES 3D Viewport
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                GLSurfaceView(ctx).apply {
-                    setEGLContextClientVersion(2)
-                    preserveEGLContextOnPause = true
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            post {
-                                applySurfaceRateAndScale(
-                                    glView = this@apply,
-                                    targetFps = performanceManager.effectiveTargetFps(),
-                                    tier = performanceManager.activeTier,
-                                )
+        // Staged 3D Viewport: Google Filament PBR by default, preserving OpenGL ES 2.0 fallback
+        key(effectiveBackend) {
+            if (effectiveBackend == RenderBackend.FILAMENT) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        SurfaceView(ctx).apply {
+                            holder.addCallback(object : SurfaceHolder.Callback {
+                                override fun surfaceCreated(holder: SurfaceHolder) {
+                                    post {
+                                        applySurfaceRateAndScale(
+                                            surfaceView = this@apply,
+                                            targetFps = performanceManager.effectiveTargetFps(),
+                                            tier = performanceManager.activeTier,
+                                        )
+                                    }
+                                }
+
+                                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+
+                                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+                            })
+                            val filamentRenderer = HorrorFilamentRenderer(
+                                context = context.applicationContext,
+                                surfaceView = this,
+                                gameEngine = gameEngine,
+                                performanceManager = performanceManager,
+                                onTelemetryUpdate = onTelemetryUpdate,
+                                onQualityScaleChanged = { newTier ->
+                                    post {
+                                        applySurfaceRateAndScale(
+                                            surfaceView = this,
+                                            targetFps = performanceManager.effectiveTargetFps(),
+                                            tier = newTier,
+                                        )
+                                    }
+                                },
+                                onFallbackToOpenGl = {
+                                    post { effectiveBackend = RenderBackend.OPENGL_ES2 }
+                                },
+                            )
+                            val ok = filamentRenderer.initialize()
+                            if (ok) {
+                                activeFilamentRenderer = filamentRenderer
+                                activeSurfaceView = this
+                                activeGlView = null
+                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                    filamentRenderer.onResume()
+                                }
+                            } else {
+                                post { effectiveBackend = RenderBackend.OPENGL_ES2 }
                             }
                         }
+                    },
+                )
+            } else {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        GLSurfaceView(ctx).apply {
+                            setEGLContextClientVersion(2)
+                            preserveEGLContextOnPause = true
+                            holder.addCallback(object : SurfaceHolder.Callback {
+                                override fun surfaceCreated(holder: SurfaceHolder) {
+                                    post {
+                                        applySurfaceRateAndScale(
+                                            surfaceView = this@apply,
+                                            targetFps = performanceManager.effectiveTargetFps(),
+                                            tier = performanceManager.activeTier,
+                                        )
+                                    }
+                                }
 
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+                                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
 
-                        override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
-                    })
-                    val renderer = HorrorGlRenderer(
-                        gameEngine = gameEngine,
-                        performanceManager = performanceManager,
-                        onTelemetryUpdate = onTelemetryUpdate,
-                        onQualityScaleChanged = { newTier ->
-                            post {
-                                applySurfaceRateAndScale(
-                                    glView = this,
-                                    targetFps = performanceManager.effectiveTargetFps(),
-                                    tier = newTier,
-                                )
-                            }
-                        },
-                    )
-                    setRenderer(renderer)
-                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                    activeGlView = this
-                }
-            },
-        )
+                                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+                            })
+                            val renderer = HorrorGlRenderer(
+                                gameEngine = gameEngine,
+                                performanceManager = performanceManager,
+                                onTelemetryUpdate = onTelemetryUpdate,
+                                onQualityScaleChanged = { newTier ->
+                                    post {
+                                        applySurfaceRateAndScale(
+                                            surfaceView = this,
+                                            targetFps = performanceManager.effectiveTargetFps(),
+                                            tier = newTier,
+                                        )
+                                    }
+                                },
+                            )
+                            setRenderer(renderer)
+                            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                            activeGlView = this
+                            activeSurfaceView = this
+                            activeFilamentRenderer = null
+                        }
+                    },
+                )
+            }
+        }
 
         // Blood & danger vignette
         BloodAndDangerVignette(
@@ -360,13 +439,13 @@ fun GameScreen(
 }
 
 private fun applySurfaceRateAndScale(
-    glView: GLSurfaceView,
+    surfaceView: SurfaceView,
     targetFps: Int,
     tier: QualityTier,
 ) {
-    val holder = glView.holder
-    val baseW = glView.width
-    val baseH = glView.height
+    val holder = surfaceView.holder
+    val baseW = surfaceView.width
+    val baseH = surfaceView.height
     if (baseW > 0 && baseH > 0) {
         val scaledW = (baseW * tier.renderScale).toInt().coerceAtLeast(360)
         val scaledH = (baseH * tier.renderScale).toInt().coerceAtLeast(240)

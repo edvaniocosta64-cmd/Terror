@@ -8,6 +8,7 @@ import com.example.audio.HorrorAudioEngine
 import com.example.data.GameSave
 import com.example.data.GameSettings
 import com.example.data.QualityPreference
+import com.example.data.RenderBackend
 import com.example.data.SaveRepository
 import com.example.data.SettingsRepository
 import com.example.data.TargetFpsMode
@@ -152,6 +153,12 @@ class MainViewModel(
     fun setQualityPreference(pref: QualityPreference) {
         viewModelScope.launch {
             settingsRepository.updateSettings { it.copy(qualityPreference = pref) }
+        }
+    }
+
+    fun setRenderBackend(backend: RenderBackend) {
+        viewModelScope.launch {
+            settingsRepository.updateSettings { it.copy(renderBackend = backend) }
         }
     }
 

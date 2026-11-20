@@ -98,15 +98,15 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val jawGranny: MeshData = MeshBuilder3D().apply {
-        addEllipsoid(cx = 0f, cy = -0.022f, cz = 0.042f, rx = 0.068f, ry = 0.040f, rz = 0.068f, rings = 10, sectors = 16)
+        addEllipsoid(cx = 0f, cy = -0.014f, cz = 0.016f, rx = 0.036f, ry = 0.022f, rz = 0.034f, rings = 8, sectors = 14)
     }.build()
 
     override val hairBun: MeshData = MeshBuilder3D().apply {
-        addSculptedGrannyHairCapAndBun(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 20, sectors = 32)
+        addSculptedGrannyHairCapAndBun(rx = 0.106f, ry = 0.130f, rz = 0.116f, rings = 24, sectors = 40)
     }.build()
 
     override val hairStrand: MeshData = MeshBuilder3D().apply {
-        addSculptedHairLock(yTop = 0.025f, yBottom = -0.155f, rings = 10, sectors = 10)
+        addSculptedHairLock(yTop = 0.025f, yBottom = -0.155f, rings = 12, sectors = 12)
     }.build()
 
     override val neckMesh: MeshData = MeshBuilder3D().apply {
@@ -130,7 +130,7 @@ class CharacterCpuMeshLibrary : CharacterMeshProvider<MeshData> {
     }.build()
 
     override val shawlCollar: MeshData = MeshBuilder3D().apply {
-        addTaperedLimb(yBottom = -0.14f, yTop = 0.04f, rxBottom = 0.22f, rzBottom = 0.16f, rxTop = 0.10f, rzTop = 0.09f, rings = 4, sectors = 18, bulgeFactor = 0.015f)
+        addTaperedLimb(yBottom = -0.15f, yTop = 0.055f, rxBottom = 0.232f, rzBottom = 0.165f, rxTop = 0.095f, rzTop = 0.088f, rings = 6, sectors = 22, bulgeFactor = 0.018f)
     }.build()
 
     override val eyeball: MeshData = MeshBuilder3D().apply {
@@ -488,7 +488,7 @@ object GrannyRigAnimator {
         stack.rotate(strideCos * 2.5f * speedNorm, 0f, 0f, 1f)
 
         // Tattered Victorian skirt
-        drawer.draw(stack.current(), meshes.skirtGranny, TextureKind.GRANNY_DRESS, 1f, 1f, 1f, 0.08f, 0f, true)
+        drawer.draw(stack.current(), meshes.skirtGranny, TextureKind.GRANNY_DRESS, 1.08f, 1.05f, 1.08f, 0.06f, 0f, true)
 
         // Left & Right Legs (visible beneath tattered hem & during long hunting strides)
         drawLeg(meshes, sideSign = 1f, strideSin = strideSin, strideCos = strideCos, speedNorm = speedNorm, drawer = drawer)
@@ -500,19 +500,20 @@ object GrannyRigAnimator {
         stack.rotate(spineHunch, 1f, 0f, 0f)
         stack.rotate(-strideSin * 5f * speedNorm, 0f, 1f, 0f)
 
-        drawer.draw(stack.current(), meshes.torsoGranny, TextureKind.GRANNY_DRESS, 1f, 1f, 1f, 0.08f, 0f, false)
+        drawer.draw(stack.current(), meshes.torsoGranny, TextureKind.GRANNY_DRESS, 1.08f, 1.05f, 1.08f, 0.06f, 0f, false)
 
-        // Shawl around upper shoulders
+        // Shawl draped broadly over upper shoulders & bodice neckline
         stack.push()
-        stack.translate(0f, 0.45f, 0.02f)
-        drawer.draw(stack.current(), meshes.shawlCollar, TextureKind.GRANNY_DRESS, 0.78f, 0.72f, 0.76f, 0.06f, 0f, true)
+        stack.translate(0f, 0.44f, 0.015f)
+        stack.scale(1.04f, 1.08f, 1.06f)
+        drawer.draw(stack.current(), meshes.shawlCollar, TextureKind.GRANNY_DRESS, 0.92f, 0.88f, 0.90f, 0.05f, 0f, true)
         stack.pop()
 
         // Neck & Head
         stack.push()
         stack.translate(0f, 0.47f, 0.02f)
         stack.rotate(-spineHunch * 0.45f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.neckMesh, TextureKind.GRANNY_SKIN, 1f, 1f, 1f, 0.14f, 0f, false)
+        drawer.draw(stack.current(), meshes.neckMesh, TextureKind.GRANNY_SKIN, 0.82f, 0.78f, 0.75f, 0.10f, 0f, false)
 
         // Head Bone (turns toward player + tilts eerily)
         stack.push()
@@ -521,44 +522,50 @@ object GrannyRigAnimator {
         stack.rotate(g.headLookPitchDeg, 1f, 0f, 0f)
         stack.rotate(g.headTiltDeg, 0f, 0f, 1f)
 
-        // Sculpted Cranium & Face
-        drawer.draw(stack.current(), meshes.sculptedHeadGranny, TextureKind.GRANNY_SKIN, 1f, 1f, 1f, 0.18f, 0f, false)
-        // Continuous Sculpted Hair Cap, Coiled Nape Bun, Swept Temple Locks & Delicate Forehead Wisps
-        drawer.draw(stack.current(), meshes.hairBun, TextureKind.GRANNY_HAIR, 1f, 1f, 1f, 0.14f, 0f, true)
+        // Sculpted Cranium & Face (gaunt aged complexion so sculpted creases & bone structure cast crisp shadows)
+        drawer.draw(stack.current(), meshes.sculptedHeadGranny, TextureKind.GRANNY_SKIN, 0.84f, 0.80f, 0.77f, 0.12f, 0f, false)
+        // Continuous Sculpted Ash-Silver Hair Cap, Coiled Nape Bun & Inward-Draped Side Locks
+        drawer.draw(stack.current(), meshes.hairBun, TextureKind.GRANNY_HAIR, 0.50f, 0.49f, 0.54f, 0.09f, 0f, true)
         stack.push()
-        stack.translate(0.094f, 0.016f, 0.014f)
-        stack.rotate(10f, 0f, 0f, 1f)
-        stack.rotate(12f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.94f, 0.94f, 0.97f, 0.14f, 0f, true)
+        stack.translate(0.086f, 0.006f, -0.002f)
+        stack.rotate(-7f, 0f, 0f, 1f)
+        stack.rotate(10f, 1f, 0f, 0f)
+        stack.scale(0.92f, 1.02f, 0.92f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.47f, 0.46f, 0.51f, 0.08f, 0f, true)
         stack.pop()
         stack.push()
-        stack.translate(-0.094f, 0.016f, 0.014f)
-        stack.rotate(-10f, 0f, 0f, 1f)
-        stack.rotate(12f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.94f, 0.94f, 0.97f, 0.14f, 0f, true)
+        stack.translate(-0.086f, 0.006f, -0.002f)
+        stack.rotate(7f, 0f, 0f, 1f)
+        stack.rotate(10f, 1f, 0f, 0f)
+        stack.scale(0.92f, 1.02f, 0.92f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.47f, 0.46f, 0.51f, 0.08f, 0f, true)
         stack.pop()
-        // Subtle forehead/temple wisps framing the brow corners without blocking eyes
+        // Subtle swept temple wisps hugging hairline without poking out sideways
         stack.push()
-        stack.translate(0.066f, 0.072f, 0.078f)
-        stack.rotate(24f, 0f, 0f, 1f)
-        stack.rotate(-18f, 1f, 0f, 0f)
-        stack.scale(0.42f, 0.40f, 0.45f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.90f, 0.90f, 0.94f, 0.13f, 0f, true)
+        stack.translate(0.056f, 0.070f, 0.064f)
+        stack.rotate(-26f, 0f, 0f, 1f)
+        stack.rotate(-14f, 1f, 0f, 0f)
+        stack.rotate(18f, 0f, 1f, 0f)
+        stack.scale(0.36f, 0.34f, 0.38f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.46f, 0.45f, 0.50f, 0.08f, 0f, true)
         stack.pop()
         stack.push()
-        stack.translate(-0.070f, 0.068f, 0.074f)
-        stack.rotate(-28f, 0f, 0f, 1f)
-        stack.rotate(-16f, 1f, 0f, 0f)
-        stack.scale(0.38f, 0.36f, 0.42f)
-        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.90f, 0.90f, 0.94f, 0.13f, 0f, true)
+        stack.translate(-0.056f, 0.070f, 0.064f)
+        stack.rotate(26f, 0f, 0f, 1f)
+        stack.rotate(-14f, 1f, 0f, 0f)
+        stack.rotate(-18f, 0f, 1f, 0f)
+        stack.scale(0.36f, 0.34f, 0.38f)
+        drawer.draw(stack.current(), meshes.hairStrand, TextureKind.GRANNY_HAIR, 0.46f, 0.45f, 0.50f, 0.08f, 0f, true)
         stack.pop()
 
-        // Hinged Lower Jaw (speech & shriek!)
-        stack.push()
-        stack.translate(0f, -0.048f, 0.02f)
-        stack.rotate(g.jawOpenAmount * 30f, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.jawGranny, TextureKind.GRANNY_SKIN, 0.92f, 0.88f, 0.86f, 0.15f, 0f, false)
-        stack.pop()
+        // Hinged Lower Jaw (drops cleanly when speaking/shrieking without obscuring resting sculpted lips & chin)
+        if (g.jawOpenAmount > 0.04f) {
+            stack.push()
+            stack.translate(0f, -0.066f - g.jawOpenAmount * 0.012f, 0.012f)
+            stack.rotate(g.jawOpenAmount * 30f, 1f, 0f, 0f)
+            drawer.draw(stack.current(), meshes.jawGranny, TextureKind.GRANNY_SKIN, 0.76f, 0.72f, 0.69f, 0.11f, 0f, false)
+            stack.pop()
+        }
 
         // Expressive Eyes, Pupils, Eyelids & Eyebrows
         drawGrannyEyesAndBrows(g, meshes, isHostile, drawer)
@@ -595,7 +602,7 @@ object GrannyRigAnimator {
             g.aiState == GrannyAiState.INVESTIGATING_NOISE -> -35f
             else -> baseBlendPitchR
         }
-        val baseElbow = -22f * (1f - huntBlend) + (-36f) * huntBlend
+        val baseElbow = -28f * (1f - huntBlend) + (-36f) * huntBlend
         val elbowFlexL = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -16f
             g.isLoomingCapture -> -28f
@@ -610,7 +617,7 @@ object GrannyRigAnimator {
 
         val shoulderRollMag = when {
             g.isDraggingCapture || dragBlend > 0.05f -> -7f
-            else -> 8f * (1f - huntBlend) + 12f * huntBlend
+            else -> 5f * (1f - huntBlend) + 10f * huntBlend
         }
 
         val fingerCurl = when {
@@ -668,41 +675,44 @@ object GrannyRigAnimator {
         val blinkClose = if (g.expression == GrannyExpression.HOSTILE_SHRIEK) 0.1f else g.blinkAmount
 
         for (sideSign in listOf(-1f, 1f)) {
-            val ex = sideSign * 0.038f
-            val ey = 0.022f
-            val ez = 0.098f
+            val ex = sideSign * 0.037f
+            val ey = 0.021f
+            val ez = 0.091f
 
-            // Eyeball
+            // Eyeball seated deeper inside the newly shaded orbital socket
             stack.push()
             stack.translate(ex, ey, ez)
-            drawer.draw(stack.current(), meshes.eyeball, TextureKind.GRANNY_HAIR, 0.92f, 0.88f, 0.84f, 0.45f, 0f, false)
+            stack.push()
+            stack.scale(0.90f, 0.86f, 0.88f)
+            drawer.draw(stack.current(), meshes.eyeball, TextureKind.GRANNY_HAIR, 0.90f, 0.86f, 0.82f, 0.42f, 0f, false)
+            stack.pop()
 
             // Iris / Pupil (turns toward player + darts nervously; glows pale crimson when hostile)
             stack.push()
-            stack.translate(sin(g.headLookYawDeg * 0.017f) * 0.005f + g.eyeDartX, g.eyeDartY, 0.015f)
+            stack.translate(sin(g.headLookYawDeg * 0.017f) * 0.005f + g.eyeDartX, g.eyeDartY, 0.013f)
             if (isHostile) {
                 drawer.draw(stack.current(), meshes.irisPupil, TextureKind.LANTERN_CORE, 1.0f, 0.16f, 0.14f, 0.8f, 0.85f, false)
             } else {
-                drawer.draw(stack.current(), meshes.irisPupil, TextureKind.METAL_PROP, 0.12f, 0.14f, 0.16f, 0.7f, 0f, false)
+                drawer.draw(stack.current(), meshes.irisPupil, TextureKind.METAL_PROP, 0.10f, 0.11f, 0.13f, 0.7f, 0f, false)
             }
             stack.pop()
 
-            // Upper Eyelid (drops smoothly on blink or suspicious squint)
-            val squint = if (g.expression == GrannyExpression.SUSPICIOUS) 0.42f else 0.15f
-            val lidScale = (squint + blinkClose * 0.85f).coerceIn(0.1f, 1.0f)
+            // Upper Eyelid (drops smoothly on blink or suspicious squint, with deeper periorbital shadow)
+            val squint = if (g.expression == GrannyExpression.SUSPICIOUS) 0.42f else 0.18f
+            val lidScale = (squint + blinkClose * 0.82f).coerceIn(0.12f, 1.0f)
             stack.push()
-            stack.translate(0f, 0.012f - lidScale * 0.008f, 0.004f)
-            stack.scale(1f, lidScale, 1f)
-            drawer.draw(stack.current(), meshes.eyelidMesh, TextureKind.GRANNY_SKIN, 0.85f, 0.78f, 0.72f, 0.12f, 0f, false)
+            stack.translate(0f, 0.011f - lidScale * 0.007f, 0.003f)
+            stack.scale(0.96f, lidScale, 0.92f)
+            drawer.draw(stack.current(), meshes.eyelidMesh, TextureKind.GRANNY_SKIN, 0.66f, 0.59f, 0.56f, 0.09f, 0f, false)
             stack.pop()
 
             stack.pop() // Eye
 
             // Eyebrow
             stack.push()
-            stack.translate(ex, 0.056f + browLiftY, ez + 0.014f)
+            stack.translate(ex, 0.052f + browLiftY, ez + 0.008f)
             stack.rotate(sideSign * -browAngle, 0f, 0f, 1f)
-            drawer.draw(stack.current(), meshes.browMesh, TextureKind.GRANNY_HAIR, 0.65f, 0.65f, 0.68f, 0.05f, 0f, false)
+            drawer.draw(stack.current(), meshes.browMesh, TextureKind.GRANNY_HAIR, 0.44f, 0.43f, 0.46f, 0.05f, 0f, false)
             stack.pop()
         }
     }
@@ -721,13 +731,13 @@ object GrannyRigAnimator {
         stack.push()
         stack.translate(sideSign * 0.105f, -0.02f, 0f)
         stack.rotate(hipPitch, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.thighMesh, TextureKind.GRANNY_DRESS, 0.75f, 0.72f, 0.75f, 0.06f, 0f, false)
+        drawer.draw(stack.current(), meshes.thighMesh, TextureKind.GRANNY_DRESS, 0.82f, 0.78f, 0.82f, 0.06f, 0f, false)
 
         // Knee
         stack.translate(0f, -0.38f, 0f)
-        drawer.draw(stack.current(), meshes.jointSphere, TextureKind.GRANNY_SKIN, 0.85f, 0.80f, 0.76f, 0.10f, 0f, false)
+        drawer.draw(stack.current(), meshes.jointSphere, TextureKind.GRANNY_SKIN, 0.78f, 0.74f, 0.71f, 0.09f, 0f, false)
         stack.rotate(kneeBend, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.shinMesh, TextureKind.GRANNY_SKIN, 0.88f, 0.82f, 0.78f, 0.12f, 0f, false)
+        drawer.draw(stack.current(), meshes.shinMesh, TextureKind.GRANNY_SKIN, 0.80f, 0.76f, 0.72f, 0.10f, 0f, false)
 
         // Modeled Old Victorian Boot
         stack.translate(0f, -0.37f, 0f)
@@ -746,28 +756,45 @@ object GrannyRigAnimator {
         skinTex: TextureKind,
         drawer: RigDrawCallback<M>,
     ) {
+        val segLenScale = 0.84f
         stack.push()
-        stack.translate(sideSign * 0.195f, 0.43f, 0f)
+        stack.translate(sideSign * 0.178f, 0.435f, 0f)
         stack.rotate(shoulderPitch, 1f, 0f, 0f)
         stack.rotate(shoulderRoll, 0f, 0f, 1f)
 
         // Shoulder joint, Upper Arm Sleeve & Elbow Cloth Cuff
-        drawer.draw(stack.current(), meshes.jointSphere, clothTex, 1f, 1f, 1f, 0.08f, 0f, false)
-        drawer.draw(stack.current(), meshes.upperArm, clothTex, 1f, 1f, 1f, 0.08f, 0f, false)
+        stack.push()
+        stack.scale(0.86f, 0.86f, 0.86f)
+        drawer.draw(stack.current(), meshes.jointSphere, clothTex, 1.06f, 1.03f, 1.06f, 0.06f, 0f, false)
+        stack.pop()
+        stack.push()
+        stack.scale(0.92f, segLenScale, 0.92f)
+        drawer.draw(stack.current(), meshes.upperArm, clothTex, 1.08f, 1.05f, 1.08f, 0.06f, 0f, false)
+        stack.pop()
 
-        stack.translate(0f, -0.27f, 0f)
-        drawer.draw(stack.current(), meshes.sleeveCuff, clothTex, 0.94f, 0.92f, 0.94f, 0.08f, 0f, false)
-        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.94f, 0.90f, 0.88f, 0.12f, 0f, false)
+        stack.translate(0f, -0.27f * segLenScale, 0f)
+        stack.push()
+        stack.scale(0.92f, 0.92f, 0.92f)
+        drawer.draw(stack.current(), meshes.sleeveCuff, clothTex, 0.96f, 0.94f, 0.96f, 0.06f, 0f, false)
+        stack.pop()
+        stack.push()
+        stack.scale(0.82f, 0.82f, 0.82f)
+        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.80f, 0.76f, 0.73f, 0.10f, 0f, false)
+        stack.pop()
         stack.rotate(elbowFlex, 1f, 0f, 0f)
-        drawer.draw(stack.current(), meshes.forearm, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
+        stack.push()
+        stack.scale(0.92f, segLenScale, 0.92f)
+        drawer.draw(stack.current(), meshes.forearm, skinTex, 0.82f, 0.78f, 0.75f, 0.10f, 0f, false)
+        stack.pop()
 
         // Wrist Transition + Sculpted Palm + Anatomically Proportioned 5 Articulated Fingers
-        stack.translate(0f, -0.25f, 0f)
+        stack.translate(0f, -0.25f * segLenScale, 0f)
+        stack.scale(0.90f, 0.90f, 0.90f)
         stack.push()
-        stack.scale(0.58f, 0.45f, 0.46f)
-        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.96f, 0.92f, 0.90f, 0.12f, 0f, false)
+        stack.scale(0.56f, 0.44f, 0.45f)
+        drawer.draw(stack.current(), meshes.jointSphere, skinTex, 0.80f, 0.76f, 0.73f, 0.10f, 0f, false)
         stack.pop()
-        drawer.draw(stack.current(), meshes.palmGranny, skinTex, 1f, 1f, 1f, 0.14f, 0f, false)
+        drawer.draw(stack.current(), meshes.palmGranny, skinTex, 0.82f, 0.78f, 0.75f, 0.10f, 0f, false)
         drawArticulatedFingers(meshes, sideSign, curlDeg = fingerCurl, skinTex = skinTex, drawer = drawer)
         stack.pop()
     }

@@ -39,9 +39,20 @@ enum class QualityPreference(val label: String) {
     }
 }
 
+enum class RenderBackend(val label: String) {
+    FILAMENT("Filament PBR"),
+    OPENGL_ES2("OpenGL ES 2.0");
+
+    companion object {
+        fun fromName(raw: String?): RenderBackend =
+            entries.firstOrNull { it.name == raw } ?: FILAMENT
+    }
+}
+
 data class GameSettings(
     val targetFpsMode: TargetFpsMode = TargetFpsMode.AUTO,
     val qualityPreference: QualityPreference = QualityPreference.AUTO,
+    val renderBackend: RenderBackend = RenderBackend.FILAMENT,
     val cameraSensitivity: Float = 1.0f,
     val masterVolume: Float = 0.85f,
     val ambientVolume: Float = 0.80f,
@@ -55,6 +66,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val TARGET_FPS = stringPreferencesKey("target_fps_mode")
         val QUALITY = stringPreferencesKey("quality_preference")
+        val RENDER_BACKEND = stringPreferencesKey("render_backend")
         val SENSITIVITY = floatPreferencesKey("camera_sensitivity")
         val MASTER_VOL = floatPreferencesKey("master_volume")
         val AMBIENT_VOL = floatPreferencesKey("ambient_volume")
@@ -67,6 +79,7 @@ class SettingsRepository(private val context: Context) {
         GameSettings(
             targetFpsMode = TargetFpsMode.fromName(prefs[Keys.TARGET_FPS]),
             qualityPreference = QualityPreference.fromName(prefs[Keys.QUALITY]),
+            renderBackend = RenderBackend.fromName(prefs[Keys.RENDER_BACKEND]),
             cameraSensitivity = (prefs[Keys.SENSITIVITY] ?: 1.0f).coerceIn(0.3f, 2.5f),
             masterVolume = (prefs[Keys.MASTER_VOL] ?: 0.85f).coerceIn(0f, 1f),
             ambientVolume = (prefs[Keys.AMBIENT_VOL] ?: 0.80f).coerceIn(0f, 1f),
@@ -81,6 +94,7 @@ class SettingsRepository(private val context: Context) {
             val current = GameSettings(
                 targetFpsMode = TargetFpsMode.fromName(prefs[Keys.TARGET_FPS]),
                 qualityPreference = QualityPreference.fromName(prefs[Keys.QUALITY]),
+                renderBackend = RenderBackend.fromName(prefs[Keys.RENDER_BACKEND]),
                 cameraSensitivity = (prefs[Keys.SENSITIVITY] ?: 1.0f).coerceIn(0.3f, 2.5f),
                 masterVolume = (prefs[Keys.MASTER_VOL] ?: 0.85f).coerceIn(0f, 1f),
                 ambientVolume = (prefs[Keys.AMBIENT_VOL] ?: 0.80f).coerceIn(0f, 1f),
@@ -91,6 +105,7 @@ class SettingsRepository(private val context: Context) {
             val next = transform(current)
             prefs[Keys.TARGET_FPS] = next.targetFpsMode.name
             prefs[Keys.QUALITY] = next.qualityPreference.name
+            prefs[Keys.RENDER_BACKEND] = next.renderBackend.name
             prefs[Keys.SENSITIVITY] = next.cameraSensitivity.coerceIn(0.3f, 2.5f)
             prefs[Keys.MASTER_VOL] = next.masterVolume.coerceIn(0f, 1f)
             prefs[Keys.AMBIENT_VOL] = next.ambientVolume.coerceIn(0f, 1f)
