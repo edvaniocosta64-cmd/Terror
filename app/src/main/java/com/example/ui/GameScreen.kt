@@ -50,6 +50,31 @@ import com.example.ui.theme.LanternAmber
 import com.example.ui.theme.ObsidianSurface
 import kotlinx.coroutines.delay
 
+private class ActiveViewportController {
+    var surfaceView: SurfaceView? = null
+    var glView: GLSurfaceView? = null
+    var filamentRenderer: HorrorFilamentRenderer? = null
+
+    fun resume() {
+        glView?.onResume()
+        filamentRenderer?.onResume()
+    }
+
+    fun pause() {
+        glView?.onPause()
+        filamentRenderer?.onPause()
+    }
+
+    fun disposeAll() {
+        glView?.onPause()
+        filamentRenderer?.onPause()
+        filamentRenderer?.destroy()
+        filamentRenderer = null
+        glView = null
+        surfaceView = null
+    }
+}
+
 @Composable
 fun GameScreen(
     gameEngine: HorrorGameEngine,
@@ -69,9 +94,7 @@ fun GameScreen(
     var isPauseOpen by remember { mutableStateOf(false) }
     var hud by remember { mutableStateOf(gameEngine.hudSnapshot()) }
     var effectiveBackend by remember { mutableStateOf(settings.renderBackend) }
-    var activeSurfaceView by remember { mutableStateOf<SurfaceView?>(null) }
-    var activeGlView by remember { mutableStateOf<GLSurfaceView?>(null) }
-    var activeFilamentRenderer by remember { mutableStateOf<HorrorFilamentRenderer?>(null) }
+    val viewportController = remember { ActiveViewportController() }
 
     LaunchedEffect(settings.renderBackend) {
         effectiveBackend = settings.renderBackend
@@ -87,11 +110,12 @@ fun GameScreen(
     }
 
     // Apply Android 11+ hardware frame rate hint & dynamic render scale whenever target/quality changes
-    LaunchedEffect(activeSurfaceView, settings.targetFpsMode, settings.qualityPreference, effectiveBackend) {
-        val sv = activeSurfaceView ?: return@LaunchedEffect
+    LaunchedEffect(effectiveBackend, settings.targetFpsMode, settings.qualityPreference) {
+        val sv = viewportController.surfaceView ?: return@LaunchedEffect
         sv.post {
             applySurfaceRateAndScale(
                 surfaceView = sv,
+                filamentRenderer = viewportController.filamentRenderer,
                 targetFps = performanceManager.effectiveTargetFps(),
                 tier = performanceManager.activeTier,
             )
@@ -106,29 +130,18 @@ fun GameScreen(
         }
     }
 
-    DisposableEffect(lifecycleOwner, activeGlView, activeFilamentRenderer) {
+    DisposableEffect(lifecycleOwner, effectiveBackend) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    activeGlView?.onResume()
-                    activeFilamentRenderer?.onResume()
-                }
-                Lifecycle.Event.ON_PAUSE -> {
-                    activeGlView?.onPause()
-                    activeFilamentRenderer?.onPause()
-                }
+                Lifecycle.Event.ON_RESUME -> viewportController.resume()
+                Lifecycle.Event.ON_PAUSE -> viewportController.pause()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            activeGlView?.onPause()
-            activeFilamentRenderer?.onPause()
-            activeFilamentRenderer?.destroy()
-            activeFilamentRenderer = null
-            activeGlView = null
-            activeSurfaceView = null
+            viewportController.disposeAll()
         }
     }
 
@@ -140,21 +153,6 @@ fun GameScreen(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         SurfaceView(ctx).apply {
-                            holder.addCallback(object : SurfaceHolder.Callback {
-                                override fun surfaceCreated(holder: SurfaceHolder) {
-                                    post {
-                                        applySurfaceRateAndScale(
-                                            surfaceView = this@apply,
-                                            targetFps = performanceManager.effectiveTargetFps(),
-                                            tier = performanceManager.activeTier,
-                                        )
-                                    }
-                                }
-
-                                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-
-                                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
-                            })
                             val filamentRenderer = HorrorFilamentRenderer(
                                 context = context.applicationContext,
                                 surfaceView = this,
@@ -165,6 +163,7 @@ fun GameScreen(
                                     post {
                                         applySurfaceRateAndScale(
                                             surfaceView = this,
+                                            filamentRenderer = viewportController.filamentRenderer,
                                             targetFps = performanceManager.effectiveTargetFps(),
                                             tier = newTier,
                                         )
@@ -174,12 +173,28 @@ fun GameScreen(
                                     post { effectiveBackend = RenderBackend.OPENGL_ES2 }
                                 },
                             )
+                            holder.addCallback(object : SurfaceHolder.Callback {
+                                override fun surfaceCreated(holder: SurfaceHolder) {
+                                    post {
+                                        applySurfaceRateAndScale(
+                                            surfaceView = this@apply,
+                                            filamentRenderer = viewportController.filamentRenderer,
+                                            targetFps = performanceManager.effectiveTargetFps(),
+                                            tier = performanceManager.activeTier,
+                                        )
+                                    }
+                                }
+
+                                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+
+                                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+                            })
                             val ok = filamentRenderer.initialize()
                             if (ok) {
-                                activeFilamentRenderer = filamentRenderer
-                                activeSurfaceView = this
-                                activeGlView = null
-                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                viewportController.filamentRenderer = filamentRenderer
+                                viewportController.surfaceView = this
+                                viewportController.glView = null
+                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                                     filamentRenderer.onResume()
                                 }
                             } else {
@@ -200,6 +215,7 @@ fun GameScreen(
                                     post {
                                         applySurfaceRateAndScale(
                                             surfaceView = this@apply,
+                                            filamentRenderer = null,
                                             targetFps = performanceManager.effectiveTargetFps(),
                                             tier = performanceManager.activeTier,
                                         )
@@ -218,6 +234,7 @@ fun GameScreen(
                                     post {
                                         applySurfaceRateAndScale(
                                             surfaceView = this,
+                                            filamentRenderer = null,
                                             targetFps = performanceManager.effectiveTargetFps(),
                                             tier = newTier,
                                         )
@@ -226,9 +243,9 @@ fun GameScreen(
                             )
                             setRenderer(renderer)
                             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                            activeGlView = this
-                            activeSurfaceView = this
-                            activeFilamentRenderer = null
+                            viewportController.glView = this
+                            viewportController.surfaceView = this
+                            viewportController.filamentRenderer = null
                         }
                     },
                 )
@@ -440,6 +457,7 @@ fun GameScreen(
 
 private fun applySurfaceRateAndScale(
     surfaceView: SurfaceView,
+    filamentRenderer: HorrorFilamentRenderer?,
     targetFps: Int,
     tier: QualityTier,
 ) {
@@ -447,11 +465,15 @@ private fun applySurfaceRateAndScale(
     val baseW = surfaceView.width
     val baseH = surfaceView.height
     if (baseW > 0 && baseH > 0) {
-        val scaledW = (baseW * tier.renderScale).toInt().coerceAtLeast(360)
-        val scaledH = (baseH * tier.renderScale).toInt().coerceAtLeast(240)
-        try {
-            holder.setFixedSize(scaledW, scaledH)
-        } catch (_: Throwable) {
+        if (filamentRenderer != null) {
+            filamentRenderer.applyRenderScale(baseW, baseH, tier)
+        } else {
+            val scaledW = (baseW * tier.renderScale).toInt().coerceAtLeast(360)
+            val scaledH = (baseH * tier.renderScale).toInt().coerceAtLeast(240)
+            try {
+                holder.setFixedSize(scaledW, scaledH)
+            } catch (_: Throwable) {
+            }
         }
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

@@ -48,20 +48,20 @@ class HorrorFilamentRenderer(
 ) : Choreographer.FrameCallback {
 
     private data class StaticBatchEntity(
-        @Entity val entity: Int,
+        @param:Entity val entity: Int,
         val mesh: FilamentMesh,
         val isShadowDecal: Boolean,
         val isTransparent: Boolean,
     )
 
     private data class DoorEntityPair(
-        @Entity val panelEntity: Int,
-        @Entity val knobEntity: Int,
+        @param:Entity val panelEntity: Int,
+        @param:Entity val knobEntity: Int,
     )
 
     private data class ItemEntityEntry(
         val def: WorldItemDef,
-        @Entity val entity: Int,
+        @param:Entity val entity: Int,
         val mesh: FilamentMesh,
         val baseTexture: TextureKind,
     )
@@ -92,9 +92,10 @@ class HorrorFilamentRenderer(
     private val staticEntities = mutableListOf<StaticBatchEntity>()
     private val doorEntities = mutableListOf<DoorEntityPair>()
     private val itemEntities = mutableListOf<ItemEntityEntry>()
-    private val dynamicPoolEntities = IntArray(160)
+    private val dynamicPoolEntities = IntArray(192)
     private var dynamicPoolCursor = 0
     private var poolInitialized = false
+    private var fallbackTriggered = false
 
     // Scratch arrays (zero per-frame heap allocations)
     private val identityMatrix = FloatArray(16).apply { Matrix.setIdentityM(this, 0) }
@@ -142,13 +143,13 @@ class HorrorFilamentRenderer(
             filamentView = eng.createView()
             val camEntity = EntityManager.get().create()
             camera = eng.createCamera(camEntity).apply {
-                setExposure(1.4f, 1f / 30f, 800f)
+                setExposure(1.0f, 1f / 4f, 400f)
             }
 
             val grading = ColorGrading.Builder()
                 .toneMapper(ToneMapper.ACES())
-                .contrast(1.08f)
-                .saturation(0.94f)
+                .contrast(1.06f)
+                .saturation(0.96f)
                 .build(eng)
             colorGrading = grading
 
@@ -162,7 +163,7 @@ class HorrorFilamentRenderer(
 
             clearOptions.clear = true
             clearOptions.discard = false
-            clearOptions.clearColor = doubleArrayOf(0.018, 0.015, 0.020, 1.0)
+            clearOptions.clearColor = doubleArrayOf(0.024, 0.028, 0.044, 1.0)
             renderer?.clearOptions = clearOptions
 
             val texRes = performanceManager.activeTier.textureSizePx
@@ -186,11 +187,15 @@ class HorrorFilamentRenderer(
                 renderCallback = object : UiHelper.RendererCallback {
                     override fun onNativeWindowChanged(surface: Surface) {
                         val e = engine ?: return
-                        swapChain?.let { sc ->
-                            e.destroySwapChain(sc)
-                            swapChain = null
+                        try {
+                            swapChain?.let { sc ->
+                                e.destroySwapChain(sc)
+                                swapChain = null
+                            }
+                            swapChain = e.createSwapChain(surface)
+                        } catch (t: Throwable) {
+                            triggerFallback(t)
                         }
-                        swapChain = e.createSwapChain(surface)
                     }
 
                     override fun onDetachedFromSurface() {
@@ -218,11 +223,24 @@ class HorrorFilamentRenderer(
             initialized = true
             true
         } catch (t: Throwable) {
-            Log.e("HorrorFilamentRenderer", "Falha ao inicializar Google Filament; revertendo para OpenGL ES 2.0", t)
-            destroy()
-            onFallbackToOpenGl(t)
+            triggerFallback(t)
             false
         }
+    }
+
+    fun applyRenderScale(baseWidth: Int, baseHeight: Int, tier: QualityTier) {
+        if (isDestroyed || baseWidth <= 0 || baseHeight <= 0) return
+        val scaledW = (baseWidth * tier.renderScale).toInt().coerceAtLeast(360)
+        val scaledH = (baseHeight * tier.renderScale).toInt().coerceAtLeast(240)
+        uiHelper?.setDesiredSize(scaledW, scaledH)
+    }
+
+    private fun triggerFallback(t: Throwable) {
+        if (fallbackTriggered) return
+        fallbackTriggered = true
+        Log.e("HorrorFilamentRenderer", "Falha no Google Filament; revertendo para OpenGL ES 2.0", t)
+        destroy()
+        onFallbackToOpenGl(t)
     }
 
     fun onResume() {
@@ -376,9 +394,7 @@ class HorrorFilamentRenderer(
                 rend.endFrame()
             }
         } catch (t: Throwable) {
-            Log.e("HorrorFilamentRenderer", "Erro durante renderizacao Filament; acionando fallback", t)
-            destroy()
-            onFallbackToOpenGl(t)
+            triggerFallback(t)
         }
     }
 
@@ -463,11 +479,11 @@ class HorrorFilamentRenderer(
 
         // Atmosphere, IBL, Fog & Clear color
         val lightScale = if (inCapture) cap.interiorLightScale.coerceIn(0.35f, 1.0f) else 1.0f
-        indirectLight?.intensity = if (insideHouse) 185f * lightScale else 115f
+        indirectLight?.intensity = if (insideHouse) 380f * lightScale else 240f
 
-        val fogR = if (insideHouse) 0.018f else 0.026f
-        val fogG = if (insideHouse) 0.015f else 0.034f
-        val fogB = if (insideHouse) 0.020f else 0.056f
+        val fogR = if (insideHouse) 0.020f else 0.028f
+        val fogG = if (insideHouse) 0.017f else 0.036f
+        val fogB = if (insideHouse) 0.024f else 0.062f
         clearOptions.clearColor[0] = fogR.toDouble()
         clearOptions.clearColor[1] = fogG.toDouble()
         clearOptions.clearColor[2] = fogB.toDouble()
@@ -475,15 +491,15 @@ class HorrorFilamentRenderer(
         renderer?.clearOptions = clearOptions
 
         fogOptions.enabled = true
-        fogOptions.distance = 0.4f
-        fogOptions.cutOffDistance = tier.drawDistance * 1.15f
-        fogOptions.maximumOpacity = 0.94f
+        fogOptions.distance = 2.2f
+        fogOptions.cutOffDistance = tier.drawDistance * 1.25f
+        fogOptions.maximumOpacity = 0.86f
         fogOptions.density = when {
-            inCapture && cap.useThirdPersonCamera -> 0.145f
-            insideHouse -> 0.052f
-            else -> 0.068f
+            inCapture && cap.useThirdPersonCamera -> 0.065f
+            insideHouse -> 0.024f
+            else -> 0.032f
         }
-        fogOptions.height = 0.6f
+        fogOptions.height = 0.7f
         fogOptions.heightFalloff = 0.35f
         fogOptions.color = floatArrayOf(fogR, fogG, fogB)
         fogOptions.inScatteringSize = 0f
@@ -615,13 +631,13 @@ class HorrorFilamentRenderer(
 
     private fun setupLightingAndIbl(eng: Engine, scene: Scene, tier: QualityTier) {
         val irr = FloatArray(27).apply {
-            // 3-band spherical harmonics ambient irradiance (cool-neutral bounce)
-            this[0] = 0.85f; this[1] = 0.78f; this[2] = 0.76f
-            this[3] = 0.12f; this[4] = 0.14f; this[5] = 0.18f
+            // 3-band spherical harmonics ambient irradiance (balanced atmospheric bounce)
+            this[0] = 1.15f; this[1] = 1.08f; this[2] = 1.12f
+            this[3] = 0.14f; this[4] = 0.16f; this[5] = 0.22f
         }
         indirectLight = IndirectLight.Builder()
             .irradiance(3, irr)
-            .intensity(160f)
+            .intensity(320f)
             .build(eng)
         scene.indirectLight = indirectLight
 
@@ -635,8 +651,8 @@ class HorrorFilamentRenderer(
 
         moonLightEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
-            .color(0.62f, 0.72f, 0.96f)
-            .intensity(2400f)
+            .color(0.68f, 0.78f, 1.0f)
+            .intensity(3600f)
             .direction(-0.32f, -0.85f, -0.42f)
             .castShadows(tier.enableShadows)
             .shadowOptions(shadowOpts)
@@ -645,10 +661,10 @@ class HorrorFilamentRenderer(
 
         flashlightEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.SPOT)
-            .color(1.0f, 0.94f, 0.82f)
+            .color(1.0f, 0.94f, 0.84f)
             .intensity(0f)
-            .falloff(17.5f)
-            .spotLightCone(0.30f, 0.56f)
+            .falloff(22.0f)
+            .spotLightCone(0.34f, 0.62f)
             .castShadows(tier.enableShadows)
             .shadowOptions(shadowOpts)
             .build(eng, flashlightEntity)
@@ -657,9 +673,9 @@ class HorrorFilamentRenderer(
         for (i in pointLightEntities.indices) {
             val e = EntityManager.get().create()
             LightManager.Builder(LightManager.Type.POINT)
-                .color(1.0f, 0.68f, 0.34f)
+                .color(1.0f, 0.70f, 0.36f)
                 .intensity(0f)
-                .falloff(11.0f)
+                .falloff(12.5f)
                 .castShadows(false)
                 .build(eng, e)
             pointLightEntities[i] = e
@@ -686,7 +702,7 @@ class HorrorFilamentRenderer(
                 val flicker = if (batFrac < 0.22f) (0.62f + 0.38f * sin(elapsedSec * 29f)) else 1f
                 lm.setPosition(flashInst, camX, camY - 0.05f, camZ)
                 lm.setDirection(flashInst, lookX, lookY, lookZ)
-                lm.setIntensity(flashInst, 980f * flicker)
+                lm.setIntensity(flashInst, 6800f * flicker)
             } else {
                 lm.setIntensity(flashInst, 0f)
             }
@@ -714,8 +730,8 @@ class HorrorFilamentRenderer(
                 }
                 lm.setPosition(inst, l.x, l.y, l.z)
                 lm.setColor(inst, l.r, l.g, l.b)
-                lm.setFalloff(inst, l.radius)
-                lm.setIntensity(inst, 320f * flicker)
+                lm.setFalloff(inst, l.radius.coerceAtLeast(10f))
+                lm.setIntensity(inst, 1850f * flicker)
             } else {
                 lm.setIntensity(inst, 0f)
             }

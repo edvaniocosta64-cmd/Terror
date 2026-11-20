@@ -290,4 +290,32 @@ class ExampleRobolectricTest {
             assertEquals(2, version)
         }
     }
+
+    @Test
+    fun `game screen initializes safely, handles Filament JVM fallback to OpenGL ES 2, and displays HUD`() {
+        val engine = com.example.engine3d.HorrorGameEngine(com.example.audio.HorrorAudioEngine())
+        engine.resetNewStory()
+        engine.skipCinematicIntro()
+        val perf = com.example.engine3d.AutoQualityController(deviceMaxHz = 90)
+
+        composeTestRule.setContent {
+            ProjectDarknessTheme {
+                com.example.ui.GameScreen(
+                    gameEngine = engine,
+                    performanceManager = perf,
+                    settings = GameSettings(renderBackend = com.example.data.RenderBackend.FILAMENT),
+                    telemetry = com.example.engine3d.PerformanceTelemetry(),
+                    saveBanner = null,
+                    onTelemetryUpdate = {},
+                    onSaveSlot = { _, _ -> },
+                    onClearSaveBanner = {},
+                    onOpenSettings = {},
+                    onExitToMenu = {},
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("pause_game_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("virtual_joystick").assertIsDisplayed()
+    }
 }

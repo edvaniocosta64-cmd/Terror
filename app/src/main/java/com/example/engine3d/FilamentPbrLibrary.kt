@@ -325,7 +325,7 @@ class FilamentPbrLibrary(
                 material.baseColor = vec4(base, outAlpha);
                 material.metallic = materialParams.metallic;
                 material.roughness = materialParams.roughness;
-                material.emissive = vec4(base * materialParams.emissiveIntensity * 6.0, 1.0);
+                material.emissive = vec4(base * materialParams.emissiveIntensity * 3.5, 1.0);
             }
             """.trimIndent()
         } else {
